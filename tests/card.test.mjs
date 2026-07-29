@@ -91,8 +91,9 @@ test("provides a visual editor without locale configuration fields", () => {
   const fields = form.schema.map((field) => field.name);
 
   assert.ok(fields.includes("collection_key"));
-  assert.ok(fields.includes("include_all_energy"));
-  assert.ok(fields.includes("entities"));
+  assert.ok(fields.includes("exclude_entities"));
+  assert.ok(!fields.includes("include_all_energy"));
+  assert.ok(!fields.includes("entities"));
   assert.ok(fields.includes("price_entity"));
   assert.ok(fields.includes("tap_action"));
   assert.ok(!fields.includes("currency"));
@@ -101,9 +102,43 @@ test("provides a visual editor without locale configuration fields", () => {
   assert.doesNotThrow(() =>
     form.assertConfig({
       collection_key: "energy_1",
-      include_all_energy: true,
     })
   );
+});
+
+test("discovers visible energy sensors and excludes selected entities", () => {
+  const card = createCard();
+  card._hass.states = {
+    "sensor.first": {
+      entity_id: "sensor.first",
+      state: "1",
+      attributes: {
+        device_class: "energy",
+        state_class: "total_increasing",
+        unit_of_measurement: "kWh",
+      },
+    },
+    "sensor.second": {
+      entity_id: "sensor.second",
+      state: "2",
+      attributes: {
+        device_class: "energy",
+        state_class: "total_increasing",
+        unit_of_measurement: "kWh",
+      },
+    },
+    "sensor.power": {
+      entity_id: "sensor.power",
+      state: "3",
+      attributes: {
+        device_class: "power",
+        unit_of_measurement: "W",
+      },
+    },
+  };
+  card._config.exclude_entities = ["sensor.second"];
+
+  assert.deepEqual(card._getEntities(), ["sensor.first"]);
 });
 
 test("provides ordered name and secondary-information choices", () => {

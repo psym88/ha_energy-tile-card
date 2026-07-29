@@ -7,7 +7,7 @@ A Home Assistant dashboard card for energy consumption, costs, and percentage-ba
 ## Features
 
 - Reads recorder statistics for the active Energy dashboard period
-- Supports a single sensor, a sensor list, or all visible energy sensors
+- Displays all visible energy sensors with an optional exclusion list
 - Includes a built-in visual card editor
 - Narrows the visual price-entity picker to monetary sensors and validates `/kWh` units
 - Displays consumption, optional costs, and a percentage bar
@@ -49,19 +49,18 @@ Display all visible energy sensors:
 ```yaml
 type: custom:ha_energy-tile-card
 collection_key: energy_1
-entities: energy
 display_unit: kWh
 show_zero: false
 tap_action:
   action: more-info
 ```
 
-Display selected sensors with the current price per kWh:
+Exclude selected sensors and display the current price per kWh:
 
 ```yaml
 type: custom:ha_energy-tile-card
 collection_key: energy_1
-entities:
+exclude_entities:
   - sensor.washing_machine_energy
   - sensor.dryer_energy
 price_entity: sensor.electricity_price
@@ -75,18 +74,11 @@ state_content:
 show_zero: false
 ```
 
-Display a single sensor:
-
-```yaml
-type: custom:ha_energy-tile-card
-collection_key: energy_1
-entity: sensor.total_energy
-```
-
 | Option | Required | Default | Description |
 | --- | --- | --- | --- |
 | `collection_key` | Yes | – | Energy data collection key, for example `energy_1` |
-| `entity` / `entities` | Yes | – | One sensor, a sensor list, or `entities: energy` |
+| `exclude_entities` | No | Empty | Energy sensors that should not be displayed |
+| `entity` / `entities` | No | – | Legacy YAML-only inclusion list retained for backward compatibility |
 | `price_entity` | No | – | Entity containing the current price with a unit ending in `/kWh` |
 | `currency` | No | Home Assistant currency | Optional YAML override for Home Assistant's configured currency |
 | `display_unit` | No | `kWh` | `Wh`, `kWh`, or `MWh` |

@@ -44,19 +44,14 @@ function assertConfig(config) {
     throw new Error("collection_key is required and must start with energy_");
   }
 
-  const autoEntities =
-    config.entities === "energy" ||
-    config.entities === "all_energy" ||
-    config.include_all_energy === true;
-
-  if (!autoEntities && !config.entity && !Array.isArray(config.entities)) {
-    throw new Error(
-      'Required field "entity", "entities", or automatic energy entities is missing'
-    );
-  }
-
   if (Array.isArray(config.entities) && config.entities.length === 0) {
     throw new Error('"entities" must not be empty');
+  }
+  if (
+    config.exclude_entities !== undefined &&
+    !Array.isArray(config.exclude_entities)
+  ) {
+    throw new Error('"exclude_entities" must be an array');
   }
 }
 
@@ -564,25 +559,26 @@ class HaEnergyTileCard extends HTMLElement {
   _getEntities() {
     if (!this._config || !this.hass) return [];
 
-    if (
-      this._config.entities === "energy" ||
-      this._config.entities === "all_energy" ||
-      this._config.include_all_energy === true
-    ) {
-      return getVisibleEnergySensors(this.hass);
-    }
-
-    const configured = Array.isArray(this._config.entities)
-      ? this._config.entities
-      : this._config.entity
-        ? [this._config.entity]
-        : [];
+    const hasLegacySelection =
+      Array.isArray(this._config.entities) || this._config.entity;
+    const configured = hasLegacySelection
+      ? Array.isArray(this._config.entities)
+        ? this._config.entities
+        : [this._config.entity]
+      : getVisibleEnergySensors(this.hass);
+    const excluded = new Set(this._config.exclude_entities || []);
 
     const resolved = [];
 
     for (const entry of configured) {
       const entityId = typeof entry === "string" ? entry : entry?.entity;
-      if (entityId && !isHiddenEntity(this.hass, entityId)) resolved.push(entityId);
+      if (
+        entityId &&
+        !excluded.has(entityId) &&
+        !isHiddenEntity(this.hass, entityId)
+      ) {
+        resolved.push(entityId);
+      }
     }
 
     return [...new Set(resolved)].sort((a, b) => a.localeCompare(b));
@@ -1108,16 +1104,7 @@ class HaEnergyTileCard extends HTMLElement {
           selector: { text: {} },
         },
         {
-          name: "include_all_energy",
-          selector: { boolean: {} },
-        },
-        {
-          name: "entities",
-          visible: {
-            field: "include_all_energy",
-            operator: "not_eq",
-            value: true,
-          },
+          name: "exclude_entities",
           selector: {
             entity: {
               multiple: true,
@@ -1195,10 +1182,7 @@ class HaEnergyTileCard extends HTMLElement {
       computeLabel: (schema, localize) => {
         const labels = {
           collection_key: "Energy collection key",
-          include_all_energy: "Use all visible energy sensors",
-          entities:
-            localize("ui.panel.lovelace.editor.card.generic.entities") ||
-            "Entities",
+          exclude_entities: "Hidden entities",
           price_entity: "Current energy price entity",
           display_unit: "Display unit",
           show_zero: "Show zero values",
@@ -1217,6 +1201,8 @@ class HaEnergyTileCard extends HTMLElement {
         ({
           collection_key:
             "Use the same energy_* key as the related Energy period card.",
+          exclude_entities:
+            "Selected energy sensors are excluded from the card.",
           price_entity:
             "Only sensors with a supported unit ending in /kWh are shown.",
         })[schema.name],
@@ -1228,7 +1214,6 @@ class HaEnergyTileCard extends HTMLElement {
     return {
       type: "custom:ha_energy-tile-card",
       collection_key: "energy_1",
-      include_all_energy: true,
       display_unit: "kWh",
       show_zero: false,
       tap_action: {
@@ -1252,7 +1237,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c HA_ENERGY-TILE-CARD %c v1.1.4 ",
+  "%c HA_ENERGY-TILE-CARD %c v1.2.0 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );
