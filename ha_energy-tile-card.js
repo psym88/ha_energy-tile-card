@@ -1081,101 +1081,121 @@ class HaEnergyTileCard extends HTMLElement {
     return {
       schema: [
         {
-          name: "collection_key",
-          required: true,
-          selector: { text: {} },
-        },
-        {
-          name: "exclude_entities",
-          selector: {
-            entity: {
-              multiple: true,
-              filter: { domain: "sensor", device_class: "energy" },
+          name: "configuration",
+          type: "expandable",
+          flatten: true,
+          schema: [
+            {
+              name: "collection_key",
+              required: true,
+              selector: { text: {} },
             },
-          },
-        },
-        {
-          name: "price_entity",
-          selector: {
-            entity: {
-              filter: {
-                domain: "sensor",
-                unit_of_measurement: PRICE_PER_KWH_UNITS,
+            {
+              name: "display_unit",
+              selector: {
+                select: {
+                  mode: "dropdown",
+                  options: ["Wh", "kWh", "MWh"],
+                },
               },
             },
-          },
-        },
-        {
-          name: "display_unit",
-          selector: {
-            select: {
-              mode: "dropdown",
-              options: ["Wh", "kWh", "MWh"],
+            {
+              name: "price_entity",
+              selector: {
+                entity: {
+                  filter: {
+                    domain: "sensor",
+                    unit_of_measurement: PRICE_PER_KWH_UNITS,
+                  },
+                },
+              },
             },
-          },
-        },
-        {
-          name: "show_zero",
-          selector: { boolean: {} },
-        },
-        {
-          name: "icon",
-          selector: { icon: {} },
-        },
-        {
-          name: "name",
-          selector: {
-            select: {
-              multiple: true,
-              reorder: true,
-              options: [
-                { value: "area", label: "Area" },
-                { value: "entity", label: "Entity" },
-                { value: "floor", label: "Floor" },
-                { value: "device", label: "Device" },
-              ],
+            {
+              name: "icon",
+              selector: { icon: {} },
             },
-          },
+            {
+              name: "tap_action",
+              selector: {
+                ui_action: {
+                  default_action: "more-info",
+                  actions: ["more-info", "none"],
+                },
+              },
+            },
+          ],
         },
         {
-          name: "state_content",
-          selector: {
-            select: {
-              multiple: true,
-              reorder: true,
-              options: [
-                { value: "area_name", label: "Area name" },
-                { value: "floor_name", label: "Floor name" },
-                { value: "device_name", label: "Device name" },
-              ],
+          name: "content",
+          type: "expandable",
+          flatten: true,
+          schema: [
+            {
+              name: "name",
+              selector: {
+                select: {
+                  multiple: true,
+                  reorder: true,
+                  options: [
+                    { value: "area", label: "Area" },
+                    { value: "entity", label: "Entity" },
+                    { value: "floor", label: "Floor" },
+                    { value: "device", label: "Device" },
+                  ],
+                },
+              },
             },
-          },
+            {
+              name: "state_content",
+              selector: {
+                select: {
+                  multiple: true,
+                  reorder: true,
+                  options: [
+                    { value: "area_name", label: "Area name" },
+                    { value: "floor_name", label: "Floor name" },
+                    { value: "device_name", label: "Device name" },
+                  ],
+                },
+              },
+            },
+          ],
         },
         {
-          name: "tap_action",
-          selector: {
-            ui_action: {
-              default_action: "more-info",
-              actions: ["more-info", "none"],
+          name: "filters",
+          type: "expandable",
+          flatten: true,
+          schema: [
+            {
+              name: "exclude_entities",
+              selector: {
+                entity: {
+                  multiple: true,
+                  filter: { domain: "sensor", device_class: "energy" },
+                },
+              },
             },
-          },
+            {
+              name: "show_zero",
+              selector: { boolean: {} },
+            },
+          ],
         },
       ],
-      computeLabel: (schema, localize) => {
+      computeLabel: (schema) => {
         const labels = {
-          collection_key: "Energy collection key",
-          exclude_entities: "Hidden entities",
-          price_entity: "Current energy price entity",
+          configuration: "Configuration",
+          content: "Content",
+          filters: "Filters",
+          collection_key: "Collection key",
+          exclude_entities: "Hide entities",
+          price_entity: "Current price",
           display_unit: "Display unit",
           show_zero: "Show zero values",
-          icon:
-            localize("ui.panel.lovelace.editor.card.generic.icon") || "Icon",
-          name:
-            localize("ui.panel.lovelace.editor.card.generic.name") || "Name",
-          state_content: "Secondary information",
-          tap_action:
-            localize("ui.panel.lovelace.editor.card.generic.tap_action") ||
-            "Tap action",
+          icon: "Icon",
+          name: "Name",
+          state_content: "State content",
+          tap_action: "Behavior on tap",
         };
         return labels[schema.name];
       },
@@ -1219,7 +1239,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c HA_ENERGY-TILE-CARD %c v2.0.0 ",
+  "%c HA_ENERGY-TILE-CARD %c v2.1.0 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );

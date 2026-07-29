@@ -77,6 +77,13 @@ function createCard(overrides = {}) {
   return card;
 }
 
+function flattenSchema(schema) {
+  return schema.flatMap((field) => [
+    field,
+    ...(field.schema ? flattenSchema(field.schema) : []),
+  ]);
+}
+
 test("uses Home Assistant currency and user number format", () => {
   const card = createCard();
   card._render();
@@ -88,8 +95,14 @@ test("uses Home Assistant currency and user number format", () => {
 
 test("provides a visual editor without locale configuration fields", () => {
   const form = Card.getConfigForm();
-  const fields = form.schema.map((field) => field.name);
+  const fields = flattenSchema(form.schema).map((field) => field.name);
 
+  assert.deepEqual(
+    form.schema.map((field) => field.name),
+    ["configuration", "content", "filters"]
+  );
+  assert.ok(form.schema.every((field) => field.type === "expandable"));
+  assert.ok(form.schema.every((field) => field.flatten === true));
   assert.ok(fields.includes("collection_key"));
   assert.ok(fields.includes("exclude_entities"));
   assert.ok(!fields.includes("include_all_energy"));
@@ -171,7 +184,10 @@ test("ignores obsolete entity inclusion settings", () => {
 
 test("provides ordered name and secondary-information choices", () => {
   const fields = Object.fromEntries(
-    Card.getConfigForm().schema.map((field) => [field.name, field])
+    flattenSchema(Card.getConfigForm().schema).map((field) => [
+      field.name,
+      field,
+    ])
   );
 
   assert.deepEqual(
@@ -189,7 +205,7 @@ test("provides ordered name and secondary-information choices", () => {
 });
 
 test("filters the price picker by price-per-kWh units", () => {
-  const priceField = Card.getConfigForm().schema.find(
+  const priceField = flattenSchema(Card.getConfigForm().schema).find(
     (field) => field.name === "price_entity"
   );
 
