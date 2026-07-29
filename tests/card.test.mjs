@@ -141,6 +141,34 @@ test("discovers visible energy sensors and excludes selected entities", () => {
   assert.deepEqual(card._getEntities(), ["sensor.first"]);
 });
 
+test("ignores obsolete entity inclusion settings", () => {
+  const card = createCard();
+  card._hass.states = {
+    "sensor.first": {
+      entity_id: "sensor.first",
+      state: "1",
+      attributes: {
+        device_class: "energy",
+        state_class: "total_increasing",
+        unit_of_measurement: "kWh",
+      },
+    },
+    "sensor.second": {
+      entity_id: "sensor.second",
+      state: "2",
+      attributes: {
+        device_class: "energy",
+        state_class: "total_increasing",
+        unit_of_measurement: "kWh",
+      },
+    },
+  };
+  card._config.entity = "sensor.first";
+  card._config.entities = ["sensor.first"];
+
+  assert.deepEqual(card._getEntities(), ["sensor.first", "sensor.second"]);
+});
+
 test("provides ordered name and secondary-information choices", () => {
   const fields = Object.fromEntries(
     Card.getConfigForm().schema.map((field) => [field.name, field])

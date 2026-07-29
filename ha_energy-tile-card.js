@@ -44,9 +44,6 @@ function assertConfig(config) {
     throw new Error("collection_key is required and must start with energy_");
   }
 
-  if (Array.isArray(config.entities) && config.entities.length === 0) {
-    throw new Error('"entities" must not be empty');
-  }
   if (
     config.exclude_entities !== undefined &&
     !Array.isArray(config.exclude_entities)
@@ -145,11 +142,15 @@ function normalizeConfig(config) {
     throw new Error('display_unit must be "Wh", "kWh", or "MWh"');
   }
 
-  return {
+  const normalized = {
     ...config,
     display_unit: displayUnit,
     show_zero: !configValueIsFalse(config.show_zero),
   };
+  delete normalized.entity;
+  delete normalized.entities;
+  delete normalized.include_all_energy;
+  return normalized;
 }
 
 function getUserLanguage(hass) {
@@ -559,29 +560,10 @@ class HaEnergyTileCard extends HTMLElement {
   _getEntities() {
     if (!this._config || !this.hass) return [];
 
-    const hasLegacySelection =
-      Array.isArray(this._config.entities) || this._config.entity;
-    const configured = hasLegacySelection
-      ? Array.isArray(this._config.entities)
-        ? this._config.entities
-        : [this._config.entity]
-      : getVisibleEnergySensors(this.hass);
     const excluded = new Set(this._config.exclude_entities || []);
-
-    const resolved = [];
-
-    for (const entry of configured) {
-      const entityId = typeof entry === "string" ? entry : entry?.entity;
-      if (
-        entityId &&
-        !excluded.has(entityId) &&
-        !isHiddenEntity(this.hass, entityId)
-      ) {
-        resolved.push(entityId);
-      }
-    }
-
-    return [...new Set(resolved)].sort((a, b) => a.localeCompare(b));
+    return getVisibleEnergySensors(this.hass).filter(
+      (entityId) => !excluded.has(entityId)
+    );
   }
 
   _buildFetchKey(entityIds) {
@@ -1237,7 +1219,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c HA_ENERGY-TILE-CARD %c v1.2.0 ",
+  "%c HA_ENERGY-TILE-CARD %c v2.0.0 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );

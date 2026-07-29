@@ -43,6 +43,8 @@ If the resource is missing, add `/hacsfiles/ha_energy-tile-card/ha_energy-tile-c
 ## Configuration
 
 > **Breaking change in v1.0.4:** Replace `custom:energy-tile-card` with `custom:ha_energy-tile-card` in existing dashboards.
+>
+> **Breaking change in v2.0.0:** `entity`, `entities`, and `include_all_energy` are no longer supported. The card always discovers visible Energy sensors and uses `exclude_entities` to hide individual sensors.
 
 Display all visible energy sensors:
 
@@ -78,7 +80,6 @@ show_zero: false
 | --- | --- | --- | --- |
 | `collection_key` | Yes | – | Energy data collection key, for example `energy_1` |
 | `exclude_entities` | No | Empty | Energy sensors that should not be displayed |
-| `entity` / `entities` | No | – | Legacy YAML-only inclusion list retained for backward compatibility |
 | `price_entity` | No | – | Entity containing the current price with a unit ending in `/kWh` |
 | `currency` | No | Home Assistant currency | Optional YAML override for Home Assistant's configured currency |
 | `display_unit` | No | `kWh` | `Wh`, `kWh`, or `MWh` |
