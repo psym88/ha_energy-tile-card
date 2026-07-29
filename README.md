@@ -8,6 +8,7 @@ A Home Assistant dashboard card for energy consumption, costs, and percentage-ba
 
 - Reads recorder statistics for the active Energy dashboard period
 - Supports a single sensor, a sensor list, or all visible energy sensors
+- Includes a built-in visual card editor
 - Displays consumption, optional costs, and a percentage bar
 - Supports `Wh`, `kWh`, and `MWh`
 - Opens the entity's more-info dialog when selected
@@ -96,7 +97,7 @@ entity: sensor.total_energy
 
 ## Home Assistant settings
 
-The card automatically uses Home Assistant's configured currency, the active user's language and number format, and Home Assistant's entity name and state formatters. These locale-dependent values do not require card configuration. The optional YAML `currency` value remains available only as a backward-compatible override.
+The card automatically uses Home Assistant's configured currency, the active user's language and number format, and Home Assistant's entity name and state formatters. These locale-dependent values do not appear in the visual editor and require no card configuration. The optional YAML `currency` value remains available only as a backward-compatible override.
 
 ## Manual installation
 

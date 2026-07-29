@@ -86,6 +86,26 @@ test("uses Home Assistant currency and user number format", () => {
   assert.match(card.shadowRoot.innerHTML, /1\.235 kWh/);
 });
 
+test("provides a visual editor without locale configuration fields", () => {
+  const form = Card.getConfigForm();
+  const fields = form.schema.map((field) => field.name);
+
+  assert.ok(fields.includes("collection_key"));
+  assert.ok(fields.includes("include_all_energy"));
+  assert.ok(fields.includes("entities"));
+  assert.ok(fields.includes("price_entity"));
+  assert.ok(fields.includes("tap_action"));
+  assert.ok(!fields.includes("currency"));
+  assert.ok(!fields.includes("language"));
+  assert.ok(!fields.includes("locale"));
+  assert.doesNotThrow(() =>
+    form.assertConfig({
+      collection_key: "energy_1",
+      include_all_energy: true,
+    })
+  );
+});
+
 test("uses Home Assistant entity name and state formatters", () => {
   const card = createCard();
   card._render();

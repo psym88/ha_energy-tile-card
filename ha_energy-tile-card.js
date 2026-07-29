@@ -9,6 +9,31 @@ const COLLECTION_RETRY_INTERVAL_MS = 500;
 const MAX_COLLECTION_RETRIES = 20;
 const ZERO_CONSUMPTION_EPSILON_KWH = 0.01;
 
+function assertConfig(config) {
+  if (
+    !config ||
+    typeof config.collection_key !== "string" ||
+    !config.collection_key.startsWith("energy_")
+  ) {
+    throw new Error("collection_key is required and must start with energy_");
+  }
+
+  const autoEntities =
+    config.entities === "energy" ||
+    config.entities === "all_energy" ||
+    config.include_all_energy === true;
+
+  if (!autoEntities && !config.entity && !Array.isArray(config.entities)) {
+    throw new Error(
+      'Required field "entity", "entities", or automatic energy entities is missing'
+    );
+  }
+
+  if (Array.isArray(config.entities) && config.entities.length === 0) {
+    throw new Error('"entities" must not be empty');
+  }
+}
+
 function isEnergyUnit(unit) {
   return !!unit && unit in ENERGY_UNITS;
 }
@@ -348,23 +373,7 @@ class HaEnergyTileCard extends HTMLElement {
   }
 
   setConfig(config) {
-    if (!config?.collection_key) {
-      throw new Error('Required field "collection_key" is missing');
-    }
-
-    const autoEntities =
-      config.entities === "energy" ||
-      config.entities === "all_energy" ||
-      config.include_all_energy === true;
-
-    if (!autoEntities && !config.entity && !Array.isArray(config.entities)) {
-      throw new Error('Required field "entity", "entities", or entities: "energy" is missing');
-    }
-
-    if (Array.isArray(config.entities) && config.entities.length === 0) {
-      throw new Error('"entities" must not be empty');
-    }
-
+    assertConfig(config);
     this._config = normalizeConfig(config);
     this._items = [];
     this._warnings = [];
@@ -1014,11 +1023,129 @@ class HaEnergyTileCard extends HTMLElement {
     return Math.max(1, this._items.length || this._resolvedEntities.length || 1);
   }
 
+  static getConfigForm() {
+    return {
+      schema: [
+        {
+          name: "collection_key",
+          required: true,
+          selector: { text: {} },
+        },
+        {
+          name: "include_all_energy",
+          selector: { boolean: {} },
+        },
+        {
+          name: "entities",
+          visible: {
+            field: "include_all_energy",
+            operator: "not_eq",
+            value: true,
+          },
+          selector: {
+            entity: {
+              multiple: true,
+              filter: { domain: "sensor", device_class: "energy" },
+            },
+          },
+        },
+        {
+          name: "price_entity",
+          selector: {
+            entity: {
+              filter: { domain: "sensor" },
+            },
+          },
+        },
+        {
+          name: "display_unit",
+          selector: {
+            select: {
+              mode: "dropdown",
+              options: ["Wh", "kWh", "MWh"],
+            },
+          },
+        },
+        {
+          name: "show_zero",
+          selector: { boolean: {} },
+        },
+        {
+          name: "icon",
+          selector: { icon: {} },
+        },
+        {
+          name: "name",
+          selector: {
+            select: {
+              multiple: true,
+              options: [
+                { value: "entity", label: "Entity" },
+                { value: "device", label: "Device" },
+                { value: "area", label: "Area" },
+                { value: "floor", label: "Floor" },
+              ],
+            },
+          },
+        },
+        {
+          name: "state_content",
+          selector: {
+            select: {
+              multiple: true,
+              options: [
+                { value: "state", label: "State" },
+                { value: "device_name", label: "Device name" },
+                { value: "area_name", label: "Area name" },
+                { value: "floor_name", label: "Floor name" },
+              ],
+            },
+          },
+        },
+        {
+          name: "tap_action",
+          selector: {
+            ui_action: {
+              default_action: "more-info",
+              actions: ["more-info", "none"],
+            },
+          },
+        },
+      ],
+      computeLabel: (schema, localize) => {
+        const labels = {
+          collection_key: "Energy collection key",
+          include_all_energy: "Use all visible energy sensors",
+          entities:
+            localize("ui.panel.lovelace.editor.card.generic.entities") ||
+            "Entities",
+          price_entity: "Current energy price entity",
+          display_unit: "Display unit",
+          show_zero: "Show zero values",
+          icon:
+            localize("ui.panel.lovelace.editor.card.generic.icon") || "Icon",
+          name:
+            localize("ui.panel.lovelace.editor.card.generic.name") || "Name",
+          state_content: "Secondary information",
+          tap_action:
+            localize("ui.panel.lovelace.editor.card.generic.tap_action") ||
+            "Tap action",
+        };
+        return labels[schema.name];
+      },
+      computeHelper: (schema) =>
+        schema.name === "collection_key"
+          ? "Use the same energy_* key as the related Energy period card."
+          : undefined,
+      assertConfig,
+    };
+  }
+
   static getStubConfig() {
     return {
       type: "custom:ha_energy-tile-card",
       collection_key: "energy_1",
-      entities: "energy",
+      include_all_energy: true,
       display_unit: "kWh",
       show_zero: false,
       tap_action: {
@@ -1042,7 +1169,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c HA_ENERGY-TILE-CARD %c v1.0.6 ",
+  "%c HA_ENERGY-TILE-CARD %c v1.1.0 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );
