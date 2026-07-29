@@ -259,7 +259,7 @@ function getCurrentPrice(hass, priceEntity) {
   return Number.isFinite(price) ? price : null;
 }
 
-class EnergyTileCard extends HTMLElement {
+class HaEnergyTileCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
@@ -540,7 +540,7 @@ class EnergyTileCard extends HTMLElement {
 
       this._error = error instanceof Error ? error.message : "Unknown error";
       this._items = [];
-      console.error("[energy-tile-card]", error);
+      console.error("[ha_energy-tile-card]", error);
     } finally {
       if (requestId === this._requestId) {
         this._fetchInFlight = false;
@@ -941,7 +941,7 @@ class EnergyTileCard extends HTMLElement {
 
   static getStubConfig() {
     return {
-      type: "custom:energy-tile-card",
+      type: "custom:ha_energy-tile-card",
       collection_key: "energy_1",
       entities: "energy",
       display_unit: "kWh",
@@ -953,13 +953,13 @@ class EnergyTileCard extends HTMLElement {
   }
 }
 
-if (!customElements.get("energy-tile-card")) {
-  customElements.define("energy-tile-card", EnergyTileCard);
+if (!customElements.get("ha_energy-tile-card")) {
+  customElements.define("ha_energy-tile-card", HaEnergyTileCard);
 }
 
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type: "energy-tile-card",
+  type: "ha_energy-tile-card",
   name: "Energy Tile Card",
   description:
     "Tile card with consumption, cost, percentage bars, show_zero, and tap_action per entity. Uses recorder statistics with a live correction based on the latest statistics state.",
@@ -967,7 +967,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENERGY-TILE-CARD %c v0.14.1 live-state-baseline-patch ",
+  "%c HA_ENERGY-TILE-CARD %c v1.0.4 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );

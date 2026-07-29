@@ -29,17 +29,21 @@ A Home Assistant dashboard card for energy consumption, costs, and percentage-ba
 HACS normally registers this resource automatically:
 
 ```text
-/hacsfiles/ha_energy-tile-card/ha_energy-tile-card.js
+/hacsfiles/ha_energy-tile-card/ha_energy-tile-card.js?hacstag=…
 ```
 
-If it is missing, add it as a JavaScript module under **Settings → Dashboards → Resources**.
+The HACS-generated `hacstag` value identifies the installed revision and changes after an update to invalidate browser caches. Keep the JavaScript filename stable; HACS manages the version parameter.
+
+If the resource is missing, add `/hacsfiles/ha_energy-tile-card/ha_energy-tile-card.js` as a JavaScript module under **Settings → Dashboards → Resources**.
 
 ## Configuration
+
+> **Breaking change in v1.0.4:** Replace `custom:energy-tile-card` with `custom:ha_energy-tile-card` in existing dashboards.
 
 Display all visible energy sensors:
 
 ```yaml
-type: custom:energy-tile-card
+type: custom:ha_energy-tile-card
 collection_key: energy_1
 entities: energy
 display_unit: kWh
@@ -51,7 +55,7 @@ tap_action:
 Display selected sensors with the current price per kWh:
 
 ```yaml
-type: custom:energy-tile-card
+type: custom:ha_energy-tile-card
 collection_key: energy_1
 entities:
   - sensor.washing_machine_energy
@@ -70,7 +74,7 @@ show_zero: false
 Display a single sensor:
 
 ```yaml
-type: custom:energy-tile-card
+type: custom:ha_energy-tile-card
 collection_key: energy_1
 entity: sensor.total_energy
 ```
