@@ -1,0 +1,10 @@
+{
+  "name": "ha-energy-tile-card",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Energy consumption tiles for Home Assistant",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "npm run build && node --check dist/ha_energy-tile-card.js"
+  }
+}
