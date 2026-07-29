@@ -353,6 +353,7 @@ function getCurrentPrice(hass, priceEntity) {
 
   const stateObj = hass.states?.[priceEntity];
   if (!stateObj) return null;
+  if (!isPricePerKWhUnit(stateObj.attributes?.unit_of_measurement)) return null;
 
   const price = parseFloat(stateObj.state);
   return Number.isFinite(price) ? price : null;
@@ -645,6 +646,19 @@ class HaEnergyTileCard extends HTMLElement {
 
     if (entityIds.length === 0) {
       warnings.push("No entities are configured");
+    }
+
+    if (this._config.price_entity) {
+      const priceState = this.hass.states?.[this._config.price_entity];
+      if (!priceState) {
+        warnings.push(`Price entity ${this._config.price_entity} was not found`);
+      } else if (
+        !isPricePerKWhUnit(priceState.attributes?.unit_of_measurement)
+      ) {
+        warnings.push(
+          `${this._config.price_entity} was ignored — its unit must end in /kWh`
+        );
+      }
     }
 
     for (const entityId of entityIds) {
@@ -1055,10 +1069,6 @@ class HaEnergyTileCard extends HTMLElement {
     return Math.max(1, this._items.length || this._resolvedEntities.length || 1);
   }
 
-  static getConfigElement() {
-    return document.createElement("ha-energy-tile-card-editor");
-  }
-
   static getConfigForm() {
     return {
       schema: [
@@ -1089,7 +1099,7 @@ class HaEnergyTileCard extends HTMLElement {
           name: "price_entity",
           selector: {
             entity: {
-              filter: { domain: "sensor" },
+              filter: { domain: "sensor", device_class: "monetary" },
             },
           },
         },
@@ -1177,116 +1187,6 @@ class HaEnergyTileCard extends HTMLElement {
   }
 }
 
-class HaEnergyTileCardEditor extends HTMLElement {
-  constructor() {
-    super();
-    this.attachShadow({ mode: "open" });
-    this._hass = undefined;
-    this._config = {};
-    this._form = undefined;
-    this._priceUnitsKey = "";
-    this._onValueChanged = this._onValueChanged.bind(this);
-  }
-
-  set hass(hass) {
-    this._hass = hass;
-    this._updateForm();
-  }
-
-  setConfig(config) {
-    this._config = { ...config };
-    if (
-      this._config.entities === "energy" ||
-      this._config.entities === "all_energy"
-    ) {
-      this._config.include_all_energy = true;
-      delete this._config.entities;
-    }
-    this._updateForm();
-  }
-
-  connectedCallback() {
-    this._updateForm();
-  }
-
-  disconnectedCallback() {
-    this._form?.removeEventListener("value-changed", this._onValueChanged);
-  }
-
-  _getPriceUnits() {
-    const units = Object.values(this._hass?.states || {})
-      .filter((stateObj) => stateObj.entity_id?.startsWith("sensor."))
-      .map((stateObj) => stateObj.attributes?.unit_of_measurement)
-      .filter(isPricePerKWhUnit);
-    return [...new Set(units)].sort();
-  }
-
-  _getSchema(priceUnits) {
-    const noMatchingUnit = "__ha_energy_tile_card_no_price_unit__/kWh";
-    return HaEnergyTileCard.getConfigForm().schema.map((field) =>
-      field.name === "price_entity"
-        ? {
-            ...field,
-            selector: {
-              entity: {
-                filter: {
-                  domain: "sensor",
-                  unit_of_measurement: priceUnits.length
-                    ? priceUnits
-                    : [noMatchingUnit],
-                },
-              },
-            },
-          }
-        : field
-    );
-  }
-
-  _updateForm() {
-    if (!this.isConnected || !this._hass) return;
-
-    if (!this._form) {
-      this.shadowRoot.innerHTML = `
-        <style>:host { display: block; }</style>
-        <ha-form></ha-form>
-      `;
-      this._form = this.shadowRoot.querySelector("ha-form");
-      this._form.addEventListener("value-changed", this._onValueChanged);
-    }
-
-    const priceUnits = this._getPriceUnits();
-    const priceUnitsKey = priceUnits.join("|");
-    const formConfig = HaEnergyTileCard.getConfigForm();
-
-    this._form.hass = this._hass;
-    this._form.data = this._config;
-    this._form.computeLabel = formConfig.computeLabel;
-    this._form.computeHelper = formConfig.computeHelper;
-
-    if (priceUnitsKey !== this._priceUnitsKey || !this._form.schema) {
-      this._priceUnitsKey = priceUnitsKey;
-      this._form.schema = this._getSchema(priceUnits);
-    }
-  }
-
-  _onValueChanged(event) {
-    const config = { ...event.detail.value };
-    if (config.include_all_energy) delete config.entities;
-    this._config = config;
-    this.dispatchEvent(
-      new CustomEvent("config-changed", {
-        detail: { config },
-        bubbles: true,
-        composed: true,
-      })
-    );
-  }
-}
-
-if (!customElements.get("ha-energy-tile-card-editor")) {
-  customElements.define("ha-energy-tile-card-editor", HaEnergyTileCardEditor);
-}
-
 if (!customElements.get("ha_energy-tile-card")) {
   customElements.define("ha_energy-tile-card", HaEnergyTileCard);
 }
@@ -1301,7 +1201,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c HA_ENERGY-TILE-CARD %c v1.1.1 ",
+  "%c HA_ENERGY-TILE-CARD %c v1.1.2 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );
