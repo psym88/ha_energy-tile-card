@@ -2,6 +2,8 @@
 
 Eine Home-Assistant-Dashboard-Karte für Energieverbrauch, Kosten und prozentuale Verbrauchsanteile.
 
+![Vorschau der HA Energy Tile Card](images/preview.svg)
+
 ## Funktionen
 
 - Liest Recorder-Statistiken für den aktiven Zeitraum des Energy-Dashboards
