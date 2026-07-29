@@ -1,3 +1,4 @@
+// HA Energy Tile Card
 const ENERGY_UNITS = {
   Wh: 1,
   kWh: 1000,

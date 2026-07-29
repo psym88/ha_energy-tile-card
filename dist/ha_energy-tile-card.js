@@ -1,9 +1,10 @@
 /**
  * HA Energy Tile Card
  * https://github.com/psym88/ha_energy-tile-card
- * Generated from src/energy-tile-card.js. Do not edit directly.
+ * Generated from src/ha_energy-tile-card.js. Do not edit directly.
  */
 
+// HA Energy Tile Card
 const ENERGY_UNITS = {
   Wh: 1,
   kWh: 1000,

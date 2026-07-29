@@ -3,11 +3,11 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const source = await readFile(resolve(root, "src/energy-tile-card.js"), "utf8");
+const source = await readFile(resolve(root, "src/ha_energy-tile-card.js"), "utf8");
 const banner = `/**
  * HA Energy Tile Card
  * https://github.com/psym88/ha_energy-tile-card
- * Generated from src/energy-tile-card.js. Do not edit directly.
+ * Generated from src/ha_energy-tile-card.js. Do not edit directly.
  */
 `;
 

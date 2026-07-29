@@ -99,7 +99,7 @@ npm run build
 npm run check
 ```
 
-Edit `src/energy-tile-card.js`, then run the build command to regenerate the HACS bundle in `dist/`.
+Edit `src/ha_energy-tile-card.js`, then run the build command to regenerate the HACS bundle in `dist/`.
 
 ## Language policy
 
