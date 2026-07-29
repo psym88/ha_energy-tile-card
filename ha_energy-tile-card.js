@@ -98,9 +98,39 @@ function normalizeConfig(config) {
   return {
     ...config,
     display_unit: displayUnit,
-    currency: config.currency || "CHF",
     show_zero: !configValueIsFalse(config.show_zero),
   };
+}
+
+function getUserLanguage(hass) {
+  return (
+    hass?.locale?.language ||
+    hass?.language ||
+    hass?.config?.language ||
+    globalThis.navigator?.language ||
+    "en"
+  );
+}
+
+function getNumberLocale(hass) {
+  const numberFormat = hass?.locale?.number_format;
+  if (numberFormat === "comma_decimal") return "en-US";
+  if (numberFormat === "decimal_comma") return "de-DE";
+  if (numberFormat === "space_comma") return "fr-FR";
+  if (numberFormat === "system") {
+    return globalThis.navigator?.language || getUserLanguage(hass);
+  }
+  return getUserLanguage(hass);
+}
+
+function getNumberFormatOptions(hass) {
+  return hass?.locale?.number_format === "none"
+    ? { useGrouping: false }
+    : {};
+}
+
+function getCurrency(hass, configuredCurrency) {
+  return configuredCurrency || hass?.config?.currency || "USD";
 }
 
 function escapeHtml(value) {
@@ -162,6 +192,10 @@ function getFloorName(hass, entityId) {
 
 function getEntityName(hass, entityId) {
   const stateObj = hass.states?.[entityId];
+  if (stateObj && typeof hass.formatEntityName === "function") {
+    const formatted = hass.formatEntityName(stateObj);
+    if (formatted) return formatted;
+  }
   const entity = hass.entities?.[entityId];
   return entity?.name || stateObj?.attributes?.friendly_name || entity?.original_name || entityId;
 }
@@ -181,20 +215,21 @@ function buildName(hass, entityId, config) {
     .join(" • ");
 }
 
-function formatStateValue(value, unit, locale) {
+function formatStateValue(value, unit, locale, numberFormatOptions = {}) {
   if (value === "unavailable" || value === "unknown" || value === "") return value;
 
   const numeric = parseFloat(value);
   if (!Number.isFinite(numeric)) return unit ? `${value} ${unit}` : value;
 
   const formatted = new Intl.NumberFormat(locale, {
+    ...numberFormatOptions,
     maximumFractionDigits: Math.abs(numeric) >= 100 ? 1 : 2,
   }).format(numeric);
 
   return unit ? `${formatted} ${unit}` : formatted;
 }
 
-function stateContentPart(hass, entityId, type, locale) {
+function stateContentPart(hass, entityId, type, locale, numberFormatOptions) {
   const stateObj = hass.states?.[entityId];
   if (!stateObj) return "";
 
@@ -202,23 +237,30 @@ function stateContentPart(hass, entityId, type, locale) {
   if (type === "area_name") return getAreaName(hass, entityId);
   if (type === "floor_name") return getFloorName(hass, entityId);
   if (type === "state") {
+    if (typeof hass.formatEntityState === "function") {
+      const formatted = hass.formatEntityState(stateObj);
+      if (formatted) return formatted;
+    }
     return formatStateValue(
       stateObj.state,
       stateObj.attributes?.unit_of_measurement,
-      locale
+      locale,
+      numberFormatOptions
     );
   }
 
   return "";
 }
 
-function buildStateContent(hass, entityId, config, locale) {
+function buildStateContent(hass, entityId, config, locale, numberFormatOptions) {
   return normalizeListConfig(
     config ?? ["state"],
     ["device_name", "area_name", "floor_name", "state"],
     ["state"]
   )
-    .map((type) => stateContentPart(hass, entityId, type, locale))
+    .map((type) =>
+      stateContentPart(hass, entityId, type, locale, numberFormatOptions)
+    )
     .filter(Boolean)
     .join(" · ");
 }
@@ -664,18 +706,30 @@ class HaEnergyTileCard extends HTMLElement {
     );
   }
 
-  _formatCost(value, currency, locale) {
-    return `${new Intl.NumberFormat(locale, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(value)} ${currency}`;
+  _formatCost(value, currency, locale, numberFormatOptions) {
+    try {
+      return new Intl.NumberFormat(locale, {
+        style: "currency",
+        currency,
+        ...numberFormatOptions,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(value);
+    } catch (_) {
+      return `${new Intl.NumberFormat(locale, {
+        ...numberFormatOptions,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(value)} ${currency}`;
+    }
   }
 
-  _formatEnergy(value, unit, locale) {
+  _formatEnergy(value, unit, locale, numberFormatOptions) {
     const abs = Math.abs(value);
     const decimals = abs >= 100 ? 0 : abs >= 10 ? 1 : 2;
 
     return `${new Intl.NumberFormat(locale, {
+      ...numberFormatOptions,
       minimumFractionDigits: decimals,
       maximumFractionDigits: decimals,
     }).format(value)} ${unit}`;
@@ -705,19 +759,30 @@ class HaEnergyTileCard extends HTMLElement {
     `;
   }
 
-  _renderEntityTile(item, locale, currency) {
+  _renderEntityTile(item, locale, currency, numberFormatOptions) {
     const entityId = item.entity;
     const icon = this._getIcon(entityId);
     const name = buildName(this.hass, entityId, this._config.name);
-    const secondary = buildStateContent(this.hass, entityId, this._config.state_content, locale);
+    const secondary = buildStateContent(
+      this.hass,
+      entityId,
+      this._config.state_content,
+      locale,
+      numberFormatOptions
+    );
     const percentage = item.percentage ?? 0;
 
     const cost =
       item.cost !== null && item.cost !== undefined
-        ? this._formatCost(item.cost, currency, locale)
+        ? this._formatCost(item.cost, currency, locale, numberFormatOptions)
         : "";
 
-    const consumption = this._formatEnergy(item.consumption, item.displayUnit, locale);
+    const consumption = this._formatEnergy(
+      item.consumption,
+      item.displayUnit,
+      locale,
+      numberFormatOptions
+    );
     const clickableClass = (this._config?.tap_action?.action ?? "more-info") === "none" ? "" : " clickable";
 
     return `
@@ -769,15 +834,25 @@ class HaEnergyTileCard extends HTMLElement {
       return;
     }
 
-    const locale = this.hass.locale?.language || this.hass.language || "de-CH";
-    const currency = this._config.currency;
+    const locale = getNumberLocale(this.hass);
+    const numberFormatOptions = getNumberFormatOptions(this.hass);
+    const currency = getCurrency(this.hass, this._config.currency);
 
     const content =
       this._loading && this._items.length === 0
         ? `<div class="loading">…</div>`
         : this._items.length === 0
           ? `<div class="loading">No values</div>`
-          : this._items.map((item) => this._renderEntityTile(item, locale, currency)).join("");
+          : this._items
+              .map((item) =>
+                this._renderEntityTile(
+                  item,
+                  locale,
+                  currency,
+                  numberFormatOptions
+                )
+              )
+              .join("");
 
     this.shadowRoot.innerHTML = `
       <style>${this._styles()}</style>
@@ -967,7 +1042,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c HA_ENERGY-TILE-CARD %c v1.0.5 ",
+  "%c HA_ENERGY-TILE-CARD %c v1.0.6 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );

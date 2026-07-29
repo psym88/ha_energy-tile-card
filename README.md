@@ -86,13 +86,17 @@ entity: sensor.total_energy
 | `collection_key` | Yes | – | Energy data collection key, for example `energy_1` |
 | `entity` / `entities` | Yes | – | One sensor, a sensor list, or `entities: energy` |
 | `price_entity` | No | – | Entity containing the current price per kWh |
-| `currency` | No | `CHF` | Currency code shown after cost values |
+| `currency` | No | Home Assistant currency | Optional YAML override for Home Assistant's configured currency |
 | `display_unit` | No | `kWh` | `Wh`, `kWh`, or `MWh` |
 | `show_zero` | No | `true` | Whether to include sensors without consumption |
 | `icon` | No | Sensor icon | One icon applied to every tile |
 | `name` | No | `entity` | Name parts: `entity`, `device`, `area`, `floor` |
 | `state_content` | No | `state` | Secondary content: `state`, `device_name`, `area_name`, `floor_name` |
 | `tap_action.action` | No | `more-info` | `more-info` or `none` |
+
+## Home Assistant settings
+
+The card automatically uses Home Assistant's configured currency, the active user's language and number format, and Home Assistant's entity name and state formatters. These locale-dependent values do not require card configuration. The optional YAML `currency` value remains available only as a backward-compatible override.
 
 ## Manual installation
 
@@ -102,6 +106,7 @@ Copy `ha_energy-tile-card.js` to `/config/www/ha_energy-tile-card.js`, then regi
 
 ```bash
 npm run check
+npm test
 ```
 
 Edit `ha_energy-tile-card.js` directly. The card is intentionally kept as a single dependency-free file and requires no build step.
