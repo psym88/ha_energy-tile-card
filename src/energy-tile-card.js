@@ -91,7 +91,7 @@ function normalizeConfig(config) {
   const displayUnit = config.display_unit || "kWh";
 
   if (!isEnergyUnit(displayUnit)) {
-    throw new Error('display_unit muss "Wh", "kWh" oder "MWh" sein');
+    throw new Error('display_unit must be "Wh", "kWh", or "MWh"');
   }
 
   return {
@@ -306,7 +306,7 @@ class EnergyTileCard extends HTMLElement {
 
   setConfig(config) {
     if (!config?.collection_key) {
-      throw new Error('Pflicht-Feld "collection_key" fehlt');
+      throw new Error('Required field "collection_key" is missing');
     }
 
     const autoEntities =
@@ -315,11 +315,11 @@ class EnergyTileCard extends HTMLElement {
       config.include_all_energy === true;
 
     if (!autoEntities && !config.entity && !Array.isArray(config.entities)) {
-      throw new Error('Pflicht-Feld "entity", "entities" oder entities: "energy" fehlt');
+      throw new Error('Required field "entity", "entities", or entities: "energy" is missing');
     }
 
     if (Array.isArray(config.entities) && config.entities.length === 0) {
-      throw new Error('"entities" darf nicht leer sein');
+      throw new Error('"entities" must not be empty');
     }
 
     this._config = normalizeConfig(config);
@@ -375,7 +375,7 @@ class EnergyTileCard extends HTMLElement {
       this._collectionRetryCount += 1;
 
       if (this._collectionRetryCount > MAX_COLLECTION_RETRIES) {
-        this._error = `Energy Collection "${collectionKey}" nicht gefunden`;
+        this._error = `Energy collection "${collectionKey}" was not found`;
         this._loading = false;
         this._render();
         return;
@@ -433,7 +433,7 @@ class EnergyTileCard extends HTMLElement {
 
   _getActivePeriodRange() {
     if (!this._collectionStart || !this._collectionEnd) {
-      throw new Error("Energy-Date-Selection ist noch nicht bereit");
+      throw new Error("Energy date selection is not ready yet");
     }
 
     const start = new Date(this._collectionStart);
@@ -520,7 +520,7 @@ class EnergyTileCard extends HTMLElement {
       const validEntities = this._validateEntities(entityIds);
 
       if (validEntities.length === 0) {
-        throw new Error("Keine gültigen Energy-Entitäten gefunden");
+        throw new Error("No valid energy entities were found");
       }
 
       const stats = await fetchStatistics(
@@ -537,7 +537,7 @@ class EnergyTileCard extends HTMLElement {
     } catch (error) {
       if (requestId !== this._requestId) return;
 
-      this._error = error instanceof Error ? error.message : "Unbekannter Fehler";
+      this._error = error instanceof Error ? error.message : "Unknown error";
       this._items = [];
       console.error("[energy-tile-card]", error);
     } finally {
@@ -560,14 +560,14 @@ class EnergyTileCard extends HTMLElement {
     const warnings = [];
 
     if (entityIds.length === 0) {
-      warnings.push("Keine Entitäten konfiguriert");
+      warnings.push("No entities are configured");
     }
 
     for (const entityId of entityIds) {
       const stateObj = this.hass.states?.[entityId];
 
       if (!stateObj) {
-        warnings.push(`Entität ${entityId} nicht gefunden`);
+        warnings.push(`Entity ${entityId} was not found`);
         continue;
       }
 
@@ -576,7 +576,7 @@ class EnergyTileCard extends HTMLElement {
 
       if (!isEnergyUnit(unit) || (stateClass && stateClass !== "total" && stateClass !== "total_increasing")) {
         warnings.push(
-          `${entityId} übersprungen — unterstützt werden nur Energy-Sensoren mit Wh, kWh oder MWh und state_class total/total_increasing`
+          `${entityId} was skipped — only energy sensors using Wh, kWh, or MWh with state_class total/total_increasing are supported`
         );
         continue;
       }
@@ -611,7 +611,7 @@ class EnergyTileCard extends HTMLElement {
         }
       }
     } catch (_) {
-      // Fallback: Wenn die Collection noch nicht bereit ist, bleibt es bei Recorder-Statistiken.
+      // Fall back to recorder statistics while the collection is not ready.
     }
 
     return convertEnergy(consumption, unit, "kWh");
@@ -775,7 +775,7 @@ class EnergyTileCard extends HTMLElement {
       this._loading && this._items.length === 0
         ? `<div class="loading">…</div>`
         : this._items.length === 0
-          ? `<div class="loading">Keine Werte</div>`
+          ? `<div class="loading">No values</div>`
           : this._items.map((item) => this._renderEntityTile(item, locale, currency)).join("");
 
     this.shadowRoot.innerHTML = `
@@ -961,7 +961,7 @@ window.customCards.push({
   type: "energy-tile-card",
   name: "Energy Tile Card",
   description:
-    "Tile-Karte mit Verbrauch, Kosten, Prozentbalken, show_zero und tap_action pro Entitätskarte. Nutzt Recorder-Statistiken plus Live-Korrektur über den letzten Statistik-State für den aktuellen Zeitraum.",
+    "Tile card with consumption, cost, percentage bars, show_zero, and tap_action per entity. Uses recorder statistics with a live correction based on the latest statistics state.",
   preview: true,
 });
 

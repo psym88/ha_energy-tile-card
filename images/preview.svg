@@ -6,8 +6,8 @@
       <rect width="804" height="126" rx="18" fill="#202b35"/>
       <circle cx="50" cy="47" r="24" fill="#03a9f4"/>
       <path d="M54 18 34 52h17l-5 25 23-38H52z" fill="#fff"/>
-      <text x="92" y="46" fill="#f2f5f8" font-size="21" font-weight="700">Waschmaschine</text>
-      <text x="92" y="72" fill="#aeb9c4" font-size="16">Waschküche · 2.14 kWh</text>
+      <text x="92" y="46" fill="#f2f5f8" font-size="21" font-weight="700">Washing Machine</text>
+      <text x="92" y="72" fill="#aeb9c4" font-size="16">Laundry Room · 2.14 kWh</text>
       <text x="742" y="55" text-anchor="end" fill="#f2f5f8" font-size="21" font-weight="700">0.57 CHF</text>
       <rect x="92" y="91" width="520" height="10" rx="5" fill="#3b4650"/>
       <rect x="92" y="91" width="382" height="10" rx="5" fill="#03a9f4"/>
@@ -17,8 +17,8 @@
       <rect width="804" height="126" rx="18" fill="#202b35"/>
       <circle cx="50" cy="47" r="24" fill="#03a9f4"/>
       <path d="M54 18 34 52h17l-5 25 23-38H52z" fill="#fff"/>
-      <text x="92" y="46" fill="#f2f5f8" font-size="21" font-weight="700">Trockner</text>
-      <text x="92" y="72" fill="#aeb9c4" font-size="16">Waschküche · 1.09 kWh</text>
+      <text x="92" y="46" fill="#f2f5f8" font-size="21" font-weight="700">Dryer</text>
+      <text x="92" y="72" fill="#aeb9c4" font-size="16">Laundry Room · 1.09 kWh</text>
       <text x="742" y="55" text-anchor="end" fill="#f2f5f8" font-size="21" font-weight="700">0.29 CHF</text>
       <rect x="92" y="91" width="520" height="10" rx="5" fill="#3b4650"/>
       <rect x="92" y="91" width="194" height="10" rx="5" fill="#03a9f4"/>
