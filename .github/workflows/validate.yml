@@ -26,6 +26,4 @@ jobs:
         with:
           node-version: 22
           package-manager-cache: false
-      - run: |
-          npm run check
-          git diff --exit-code -- dist/ha_energy-tile-card.js
+      - run: npm run check

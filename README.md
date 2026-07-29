@@ -94,16 +94,15 @@ entity: sensor.total_energy
 
 ## Manual installation
 
-Copy `dist/ha_energy-tile-card.js` to `/config/www/ha_energy-tile-card.js`, then register `/local/ha_energy-tile-card.js` as a JavaScript module.
+Copy `ha_energy-tile-card.js` to `/config/www/ha_energy-tile-card.js`, then register `/local/ha_energy-tile-card.js` as a JavaScript module.
 
 ## Development
 
 ```bash
-npm run build
 npm run check
 ```
 
-Edit `src/ha_energy-tile-card.js`, then run the build command to regenerate the HACS bundle in `dist/`.
+Edit `ha_energy-tile-card.js` directly. The card is intentionally kept as a single dependency-free file and requires no build step.
 
 ## Language policy
 
