@@ -94,7 +94,6 @@ entity: sensor.total_energy
 | `icon` | No | Sensor icon | One icon applied to every tile |
 | `name` | No | `entity` | Name parts: `entity`, `device`, `area`, `floor` |
 | `state_content` | No | `state` | Secondary content: `state`, `device_name`, `area_name`, `floor_name` |
-| `editor_context_entity` | No | – | Representative Energy sensor used only to populate the native name and secondary-information pickers |
 | `tap_action.action` | No | `more-info` | `more-info` or `none` |
 
 ## Home Assistant settings

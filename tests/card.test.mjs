@@ -106,21 +106,23 @@ test("provides a visual editor without locale configuration fields", () => {
   );
 });
 
-test("uses native Home Assistant context pickers", () => {
+test("provides ordered name and secondary-information choices", () => {
   const fields = Object.fromEntries(
     Card.getConfigForm().schema.map((field) => [field.name, field])
   );
 
-  assert.deepEqual(fields.name.selector, { entity_name: {} });
-  assert.deepEqual(fields.name.context, {
-    entity: "editor_context_entity",
-  });
-  assert.deepEqual(fields.state_content.selector, {
-    ui_state_content: { allow_context: true },
-  });
-  assert.deepEqual(fields.state_content.context, {
-    filter_entity: "editor_context_entity",
-  });
+  assert.deepEqual(
+    fields.name.selector.select.options.map((option) => option.value),
+    ["area", "entity", "floor", "device"]
+  );
+  assert.equal(fields.name.selector.select.multiple, true);
+  assert.equal(fields.name.selector.select.reorder, true);
+  assert.deepEqual(
+    fields.state_content.selector.select.options.map((option) => option.value),
+    ["area_name", "floor_name", "device_name"]
+  );
+  assert.equal(fields.state_content.selector.select.multiple, true);
+  assert.equal(fields.state_content.selector.select.reorder, true);
 });
 
 test("filters the price picker by price-per-kWh units", () => {
