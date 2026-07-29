@@ -8,6 +8,7 @@ const ENERGY_UNITS = {
 const COLLECTION_RETRY_INTERVAL_MS = 500;
 const MAX_COLLECTION_RETRIES = 20;
 const ZERO_CONSUMPTION_EPSILON_KWH = 0.01;
+const PRICE_UNIT_PATTERN = /^.+\/kWh$/i;
 
 function assertConfig(config) {
   if (
@@ -32,6 +33,10 @@ function assertConfig(config) {
   if (Array.isArray(config.entities) && config.entities.length === 0) {
     throw new Error('"entities" must not be empty');
   }
+}
+
+function isPricePerKWhUnit(unit) {
+  return typeof unit === "string" && PRICE_UNIT_PATTERN.test(unit.trim());
 }
 
 function isEnergyUnit(unit) {
@@ -234,6 +239,11 @@ function namePart(hass, entityId, type) {
 }
 
 function buildName(hass, entityId, config) {
+  const stateObj = hass.states?.[entityId];
+  if (stateObj && typeof hass.formatEntityName === "function") {
+    const formatted = hass.formatEntityName(stateObj, config);
+    if (formatted) return formatted;
+  }
   return normalizeListConfig(config ?? "entity", ["entity", "area", "floor", "device"], ["entity"])
     .map((type) => namePart(hass, entityId, type))
     .filter(Boolean)
@@ -261,6 +271,15 @@ function stateContentPart(hass, entityId, type, locale, numberFormatOptions) {
   if (type === "device_name") return getDeviceName(hass, entityId);
   if (type === "area_name") return getAreaName(hass, entityId);
   if (type === "floor_name") return getFloorName(hass, entityId);
+  if (type === "last_changed" || type === "last_updated") {
+    const value = stateObj[type];
+    if (!value) return "";
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: "short",
+      timeStyle: "short",
+      timeZone: hass.config?.time_zone,
+    }).format(new Date(value));
+  }
   if (type === "state") {
     if (typeof hass.formatEntityState === "function") {
       const formatted = hass.formatEntityState(stateObj);
@@ -274,15 +293,28 @@ function stateContentPart(hass, entityId, type, locale, numberFormatOptions) {
     );
   }
 
+  if (typeof hass.formatEntityAttributeValue === "function") {
+    const formatted = hass.formatEntityAttributeValue(stateObj, type);
+    if (formatted) return formatted;
+  }
+
+  const attribute = stateObj.attributes?.[type];
+  if (attribute !== undefined && attribute !== null) return String(attribute);
+
   return "";
 }
 
 function buildStateContent(hass, entityId, config, locale, numberFormatOptions) {
-  return normalizeListConfig(
-    config ?? ["state"],
-    ["device_name", "area_name", "floor_name", "state"],
-    ["state"]
-  )
+  const content = Array.isArray(config)
+    ? config.map((entry) =>
+        typeof entry === "string" ? entry : entry?.type || entry?.attribute
+      )
+    : typeof config === "string"
+      ? [config]
+      : ["state"];
+
+  return content
+    .filter(Boolean)
     .map((type) =>
       stateContentPart(hass, entityId, type, locale, numberFormatOptions)
     )
@@ -1023,6 +1055,10 @@ class HaEnergyTileCard extends HTMLElement {
     return Math.max(1, this._items.length || this._resolvedEntities.length || 1);
   }
 
+  static getConfigElement() {
+    return document.createElement("ha-energy-tile-card-editor");
+  }
+
   static getConfigForm() {
     return {
       schema: [
@@ -1077,28 +1113,14 @@ class HaEnergyTileCard extends HTMLElement {
         {
           name: "name",
           selector: {
-            select: {
-              multiple: true,
-              options: [
-                { value: "entity", label: "Entity" },
-                { value: "device", label: "Device" },
-                { value: "area", label: "Area" },
-                { value: "floor", label: "Floor" },
-              ],
-            },
+            entity_name: {},
           },
         },
         {
           name: "state_content",
           selector: {
-            select: {
-              multiple: true,
-              options: [
-                { value: "state", label: "State" },
-                { value: "device_name", label: "Device name" },
-                { value: "area_name", label: "Area name" },
-                { value: "floor_name", label: "Floor name" },
-              ],
+            ui_state_content: {
+              allow_context: true,
             },
           },
         },
@@ -1155,6 +1177,116 @@ class HaEnergyTileCard extends HTMLElement {
   }
 }
 
+class HaEnergyTileCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._hass = undefined;
+    this._config = {};
+    this._form = undefined;
+    this._priceUnitsKey = "";
+    this._onValueChanged = this._onValueChanged.bind(this);
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._updateForm();
+  }
+
+  setConfig(config) {
+    this._config = { ...config };
+    if (
+      this._config.entities === "energy" ||
+      this._config.entities === "all_energy"
+    ) {
+      this._config.include_all_energy = true;
+      delete this._config.entities;
+    }
+    this._updateForm();
+  }
+
+  connectedCallback() {
+    this._updateForm();
+  }
+
+  disconnectedCallback() {
+    this._form?.removeEventListener("value-changed", this._onValueChanged);
+  }
+
+  _getPriceUnits() {
+    const units = Object.values(this._hass?.states || {})
+      .filter((stateObj) => stateObj.entity_id?.startsWith("sensor."))
+      .map((stateObj) => stateObj.attributes?.unit_of_measurement)
+      .filter(isPricePerKWhUnit);
+    return [...new Set(units)].sort();
+  }
+
+  _getSchema(priceUnits) {
+    const noMatchingUnit = "__ha_energy_tile_card_no_price_unit__/kWh";
+    return HaEnergyTileCard.getConfigForm().schema.map((field) =>
+      field.name === "price_entity"
+        ? {
+            ...field,
+            selector: {
+              entity: {
+                filter: {
+                  domain: "sensor",
+                  unit_of_measurement: priceUnits.length
+                    ? priceUnits
+                    : [noMatchingUnit],
+                },
+              },
+            },
+          }
+        : field
+    );
+  }
+
+  _updateForm() {
+    if (!this.isConnected || !this._hass) return;
+
+    if (!this._form) {
+      this.shadowRoot.innerHTML = `
+        <style>:host { display: block; }</style>
+        <ha-form></ha-form>
+      `;
+      this._form = this.shadowRoot.querySelector("ha-form");
+      this._form.addEventListener("value-changed", this._onValueChanged);
+    }
+
+    const priceUnits = this._getPriceUnits();
+    const priceUnitsKey = priceUnits.join("|");
+    const formConfig = HaEnergyTileCard.getConfigForm();
+
+    this._form.hass = this._hass;
+    this._form.data = this._config;
+    this._form.computeLabel = formConfig.computeLabel;
+    this._form.computeHelper = formConfig.computeHelper;
+
+    if (priceUnitsKey !== this._priceUnitsKey || !this._form.schema) {
+      this._priceUnitsKey = priceUnitsKey;
+      this._form.schema = this._getSchema(priceUnits);
+    }
+  }
+
+  _onValueChanged(event) {
+    const config = { ...event.detail.value };
+    if (config.include_all_energy) delete config.entities;
+    this._config = config;
+    this.dispatchEvent(
+      new CustomEvent("config-changed", {
+        detail: { config },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+}
+
+if (!customElements.get("ha-energy-tile-card-editor")) {
+  customElements.define("ha-energy-tile-card-editor", HaEnergyTileCardEditor);
+}
+
 if (!customElements.get("ha_energy-tile-card")) {
   customElements.define("ha_energy-tile-card", HaEnergyTileCard);
 }
@@ -1169,7 +1301,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c HA_ENERGY-TILE-CARD %c v1.1.0 ",
+  "%c HA_ENERGY-TILE-CARD %c v1.1.1 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );

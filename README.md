@@ -9,6 +9,7 @@ A Home Assistant dashboard card for energy consumption, costs, and percentage-ba
 - Reads recorder statistics for the active Energy dashboard period
 - Supports a single sensor, a sensor list, or all visible energy sensors
 - Includes a built-in visual card editor
+- Limits the visual price-entity picker to sensors measured per kWh
 - Displays consumption, optional costs, and a percentage bar
 - Supports `Wh`, `kWh`, and `MWh`
 - Opens the entity's more-info dialog when selected
@@ -86,7 +87,7 @@ entity: sensor.total_energy
 | --- | --- | --- | --- |
 | `collection_key` | Yes | – | Energy data collection key, for example `energy_1` |
 | `entity` / `entities` | Yes | – | One sensor, a sensor list, or `entities: energy` |
-| `price_entity` | No | – | Entity containing the current price per kWh |
+| `price_entity` | No | – | Entity containing the current price with a unit ending in `/kWh` |
 | `currency` | No | Home Assistant currency | Optional YAML override for Home Assistant's configured currency |
 | `display_unit` | No | `kWh` | `Wh`, `kWh`, or `MWh` |
 | `show_zero` | No | `true` | Whether to include sensors without consumption |

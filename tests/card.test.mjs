@@ -106,6 +106,47 @@ test("provides a visual editor without locale configuration fields", () => {
   );
 });
 
+test("uses native Home Assistant context pickers", () => {
+  const fields = Object.fromEntries(
+    Card.getConfigForm().schema.map((field) => [field.name, field])
+  );
+
+  assert.deepEqual(fields.name.selector, { entity_name: {} });
+  assert.deepEqual(fields.state_content.selector, {
+    ui_state_content: { allow_context: true },
+  });
+});
+
+test("limits the price picker to available price-per-kWh units", () => {
+  const Editor = registry.get("ha-energy-tile-card-editor");
+  const editor = new Editor();
+  editor._hass = {
+    states: {
+      "sensor.valid_price": {
+        entity_id: "sensor.valid_price",
+        attributes: { unit_of_measurement: "CHF/kWh" },
+      },
+      "sensor.other_currency": {
+        entity_id: "sensor.other_currency",
+        attributes: { unit_of_measurement: "EUR/kWh" },
+      },
+      "sensor.total_cost": {
+        entity_id: "sensor.total_cost",
+        attributes: { unit_of_measurement: "CHF" },
+      },
+    },
+  };
+
+  const priceField = editor
+    ._getSchema(editor._getPriceUnits())
+    .find((field) => field.name === "price_entity");
+
+  assert.deepEqual(
+    priceField.selector.entity.filter.unit_of_measurement,
+    ["CHF/kWh", "EUR/kWh"]
+  );
+});
+
 test("uses Home Assistant entity name and state formatters", () => {
   const card = createCard();
   card._render();
