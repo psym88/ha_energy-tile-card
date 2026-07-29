@@ -112,20 +112,29 @@ test("uses native Home Assistant context pickers", () => {
   );
 
   assert.deepEqual(fields.name.selector, { entity_name: {} });
+  assert.deepEqual(fields.name.context, {
+    entity: "editor_context_entity",
+  });
   assert.deepEqual(fields.state_content.selector, {
     ui_state_content: { allow_context: true },
   });
+  assert.deepEqual(fields.state_content.context, {
+    filter_entity: "editor_context_entity",
+  });
 });
 
-test("uses Home Assistant's monetary entity filter for the price picker", () => {
+test("filters the price picker by price-per-kWh units", () => {
   const priceField = Card.getConfigForm().schema.find(
     (field) => field.name === "price_entity"
   );
 
-  assert.deepEqual(priceField.selector.entity.filter, {
-    domain: "sensor",
-    device_class: "monetary",
-  });
+  assert.equal(priceField.selector.entity.filter.domain, "sensor");
+  assert.ok(
+    priceField.selector.entity.filter.unit_of_measurement.includes("CHF/kWh")
+  );
+  assert.ok(
+    !priceField.selector.entity.filter.unit_of_measurement.includes("CHF")
+  );
 });
 
 test("uses Home Assistant entity name and state formatters", () => {

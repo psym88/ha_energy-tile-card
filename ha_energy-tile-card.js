@@ -9,6 +9,31 @@ const COLLECTION_RETRY_INTERVAL_MS = 500;
 const MAX_COLLECTION_RETRIES = 20;
 const ZERO_CONSUMPTION_EPSILON_KWH = 0.01;
 const PRICE_UNIT_PATTERN = /^.+\/kWh$/i;
+const PRICE_PER_KWH_UNITS = Object.freeze([
+  "CHF/kWh",
+  "EUR/kWh",
+  "USD/kWh",
+  "GBP/kWh",
+  "AUD/kWh",
+  "CAD/kWh",
+  "DKK/kWh",
+  "NOK/kWh",
+  "SEK/kWh",
+  "PLN/kWh",
+  "CZK/kWh",
+  "HUF/kWh",
+  "RON/kWh",
+  "JPY/kWh",
+  "CNY/kWh",
+  "INR/kWh",
+  "BRL/kWh",
+  "ZAR/kWh",
+  "€/kWh",
+  "£/kWh",
+  "$/kWh",
+  "ct/kWh",
+  "c/kWh",
+]);
 
 function assertConfig(config) {
   if (
@@ -1099,7 +1124,10 @@ class HaEnergyTileCard extends HTMLElement {
           name: "price_entity",
           selector: {
             entity: {
-              filter: { domain: "sensor", device_class: "monetary" },
+              filter: {
+                domain: "sensor",
+                unit_of_measurement: PRICE_PER_KWH_UNITS,
+              },
             },
           },
         },
@@ -1121,10 +1149,19 @@ class HaEnergyTileCard extends HTMLElement {
           selector: { icon: {} },
         },
         {
+          name: "editor_context_entity",
+          selector: {
+            entity: {
+              filter: { domain: "sensor", device_class: "energy" },
+            },
+          },
+        },
+        {
           name: "name",
           selector: {
             entity_name: {},
           },
+          context: { entity: "editor_context_entity" },
         },
         {
           name: "state_content",
@@ -1133,6 +1170,7 @@ class HaEnergyTileCard extends HTMLElement {
               allow_context: true,
             },
           },
+          context: { filter_entity: "editor_context_entity" },
         },
         {
           name: "tap_action",
@@ -1154,6 +1192,7 @@ class HaEnergyTileCard extends HTMLElement {
           price_entity: "Current energy price entity",
           display_unit: "Display unit",
           show_zero: "Show zero values",
+          editor_context_entity: "Editor context entity",
           icon:
             localize("ui.panel.lovelace.editor.card.generic.icon") || "Icon",
           name:
@@ -1166,9 +1205,14 @@ class HaEnergyTileCard extends HTMLElement {
         return labels[schema.name];
       },
       computeHelper: (schema) =>
-        schema.name === "collection_key"
-          ? "Use the same energy_* key as the related Energy period card."
-          : undefined,
+        ({
+          collection_key:
+            "Use the same energy_* key as the related Energy period card.",
+          price_entity:
+            "Only sensors with a supported unit ending in /kWh are shown.",
+          editor_context_entity:
+            "Select one representative energy sensor to provide options for the name and secondary-information pickers. This does not change the displayed entities.",
+        })[schema.name],
       assertConfig,
     };
   }
@@ -1201,7 +1245,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c HA_ENERGY-TILE-CARD %c v1.1.2 ",
+  "%c HA_ENERGY-TILE-CARD %c v1.1.3 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );
