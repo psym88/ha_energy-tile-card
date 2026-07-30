@@ -441,7 +441,6 @@ class HaEnergyTileCard extends HTMLElement {
     this._fetchInFlight = false;
     this._pendingFetch = false;
     this._lastFetchKey = "";
-    this._requestId = 0;
     this._resolvedEntities = [];
 
     this._onClick = this._onClick.bind(this);
@@ -743,7 +742,6 @@ class HaEnergyTileCard extends HTMLElement {
   }
 
   async _fetchData(entityIds, fetchKey) {
-    const requestId = ++this._requestId;
     const initialLoad = this._items.length === 0;
 
     this._fetchInFlight = true;
@@ -768,21 +766,17 @@ class HaEnergyTileCard extends HTMLElement {
         period.end
       );
 
-      if (requestId !== this._requestId || fetchKey !== this._lastFetchKey) return;
+      if (fetchKey !== this._lastFetchKey) return;
 
       this._items = this._buildItems(validEntities, stats);
     } catch (error) {
-      if (requestId !== this._requestId) return;
-
       this._error = error instanceof Error ? error.message : "Unknown error";
       this._items = [];
       console.error("[ha_energy-tile-card]", error);
     } finally {
-      if (requestId === this._requestId) {
-        this._fetchInFlight = false;
-        this._loading = false;
-        this._render();
-      }
+      this._fetchInFlight = false;
+      this._loading = false;
+      this._render();
 
       if (this._pendingFetch) {
         this._pendingFetch = false;
@@ -1427,7 +1421,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c HA_ENERGY-TILE-CARD %c v2.2.0-beta.6 ",
+  "%c HA_ENERGY-TILE-CARD %c v2.2.0-beta.7 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );
