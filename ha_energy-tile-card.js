@@ -7,6 +7,8 @@ const ENERGY_UNITS = {
 
 const COLLECTION_RETRY_INTERVAL_MS = 500;
 const MAX_COLLECTION_RETRIES = 20;
+const LIVE_STATISTICS_REFRESH_MS = 5 * 60 * 1000;
+const LIVE_STATE_LOOKBACK_MS = 2 * 60 * 60 * 1000;
 const ZERO_CONSUMPTION_EPSILON_KWH = 0.01;
 const PRICE_UNIT_PATTERN = /^.+\/kWh$/i;
 const PRICE_PER_KWH_UNITS = Object.freeze([
@@ -71,35 +73,56 @@ function hasPositiveConsumption(valueKWh) {
   return Number.isFinite(valueKWh) && valueKWh > ZERO_CONSUMPTION_EPSILON_KWH;
 }
 
-function getSuggestedStatisticsPeriod(start, end) {
-  const days = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000));
-  if (days <= 8) return "hour";
-  if (days > 370) return "month";
-  return "day";
-}
-
 function findEnergyDataCollection(hass, collectionKey) {
   return hass?.connection?.[`_${collectionKey}`];
 }
 
-async function fetchStatistics(hass, statisticIds, start, end, period) {
-  if (!statisticIds.length) return {};
+async function fetchStatisticTotal(hass, statisticId, start, end) {
   return hass.callWS({
-    type: "recorder/statistics_during_period",
-    start_time: start.toISOString(),
-    end_time: end.toISOString(),
-    statistic_ids: statisticIds,
-    period,
-    types: ["change", "state"],
+    type: "recorder/statistic_during_period",
+    statistic_id: statisticId,
+    fixed_period: {
+      start_time: start.toISOString(),
+      end_time: end.toISOString(),
+    },
   });
 }
 
-function sumChange(rows) {
-  let total = 0;
-  for (const row of rows || []) {
-    if (typeof row.change === "number") total += row.change;
-  }
-  return total;
+async function fetchStatisticTotals(hass, statisticIds, start, end) {
+  const entries = await Promise.all(
+    statisticIds.map(async (statisticId) => {
+      const statistic = await fetchStatisticTotal(
+        hass,
+        statisticId,
+        start,
+        end
+      );
+      return [statisticId, statistic || {}];
+    })
+  );
+  return Object.fromEntries(entries);
+}
+
+async function fetchLatestStatisticStates(hass, statisticIds, start, end) {
+  if (!statisticIds.length) return {};
+
+  const liveEnd = new Date(Math.min(end.getTime(), Date.now()));
+  const lookbackStart = new Date(
+    Math.max(start.getTime(), liveEnd.getTime() - LIVE_STATE_LOOKBACK_MS)
+  );
+
+  return hass.callWS({
+    type: "recorder/statistics_during_period",
+    start_time: lookbackStart.toISOString(),
+    end_time: liveEnd.toISOString(),
+    statistic_ids: statisticIds,
+    period: "hour",
+    types: ["state"],
+  });
+}
+
+function getStatisticChange(statistic) {
+  return typeof statistic?.change === "number" ? statistic.change : 0;
 }
 
 function getStatisticState(row) {
@@ -410,6 +433,8 @@ class HaEnergyTileCard extends HTMLElement {
     this._lastFetchKey = "";
     this._requestId = 0;
     this._resolvedEntities = [];
+    this._cachedEntityIds = [];
+    this._statistics = undefined;
 
     this._onClick = this._onClick.bind(this);
   }
@@ -439,6 +464,8 @@ class HaEnergyTileCard extends HTMLElement {
     this._error = null;
     this._loading = true;
     this._lastFetchKey = "";
+    this._cachedEntityIds = [];
+    this._statistics = undefined;
 
     this._setupEnergyCollection();
     this._render();
@@ -553,7 +580,6 @@ class HaEnergyTileCard extends HTMLElement {
     return {
       start,
       end,
-      resolution: getSuggestedStatisticsPeriod(start, end),
     };
   }
 
@@ -567,15 +593,16 @@ class HaEnergyTileCard extends HTMLElement {
   }
 
   _buildFetchKey(entityIds) {
+    const { start, end } = this._getActivePeriodRange();
+    const liveRefreshBucket = shouldIncludeLiveDelta(start, end)
+      ? Math.floor(Date.now() / LIVE_STATISTICS_REFRESH_MS)
+      : "";
+
     return [
       entityIds.join(","),
-      this._config.price_entity || "",
       this._collectionStart?.toISOString() || "",
       this._collectionEnd?.toISOString() || "",
-      this._config.show_zero,
-      this._config.display_unit,
-      this.hass?.states?.[this._config.price_entity]?.state || "",
-      ...entityIds.map((entityId) => this.hass?.states?.[entityId]?.state || ""),
+      liveRefreshBucket,
     ].join("|");
   }
 
@@ -586,7 +613,13 @@ class HaEnergyTileCard extends HTMLElement {
     this._resolvedEntities = entityIds;
 
     const key = this._buildFetchKey(entityIds);
-    if (key === this._lastFetchKey) return;
+    if (key === this._lastFetchKey) {
+      if (this._statistics) {
+        this._items = this._buildItems(this._cachedEntityIds, this._statistics);
+        this._render();
+      }
+      return;
+    }
 
     if (this._fetchInFlight) {
       this._pendingFetch = true;
@@ -616,22 +649,40 @@ class HaEnergyTileCard extends HTMLElement {
         throw new Error("No valid energy entities were found");
       }
 
-      const stats = await fetchStatistics(
+      const stats = await fetchStatisticTotals(
         this.hass,
         validEntities,
         period.start,
-        period.end,
-        period.resolution
+        period.end
       );
+
+      if (shouldIncludeLiveDelta(period.start, period.end)) {
+        const latestStates = await fetchLatestStatisticStates(
+          this.hass,
+          validEntities,
+          period.start,
+          period.end
+        );
+
+        for (const entityId of validEntities) {
+          stats[entityId].lastState = getLastStatisticState(
+            latestStates[entityId]
+          );
+        }
+      }
 
       if (requestId !== this._requestId || fetchKey !== this._lastFetchKey) return;
 
+      this._statistics = stats;
+      this._cachedEntityIds = validEntities;
       this._items = this._buildItems(validEntities, stats);
     } catch (error) {
       if (requestId !== this._requestId) return;
 
       this._error = error instanceof Error ? error.message : "Unknown error";
       this._items = [];
+      this._cachedEntityIds = [];
+      this._statistics = undefined;
       console.error("[ha_energy-tile-card]", error);
     } finally {
       if (requestId === this._requestId) {
@@ -697,16 +748,16 @@ class HaEnergyTileCard extends HTMLElement {
   _getConsumptionKWh(entityId, stats) {
     const stateObj = this.hass.states?.[entityId];
     const unit = stateObj?.attributes?.unit_of_measurement;
-    const rows = stats[entityId] || [];
+    const statistic = stats[entityId];
 
-    let consumption = sumChange(rows);
+    let consumption = getStatisticChange(statistic);
 
     try {
       const { start, end } = this._getActivePeriodRange();
 
       if (shouldIncludeLiveDelta(start, end)) {
         const currentValue = getCurrentSensorValue(stateObj);
-        const lastStatisticState = getLastStatisticState(rows);
+        const lastStatisticState = statistic?.lastState;
 
         if (currentValue !== null && lastStatisticState !== null) {
           const liveDelta = currentValue - lastStatisticState;
@@ -1239,7 +1290,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c HA_ENERGY-TILE-CARD %c v2.1.0 ",
+  "%c HA_ENERGY-TILE-CARD %c v2.2.0-beta.1 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );

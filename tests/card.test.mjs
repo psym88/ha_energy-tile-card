@@ -43,7 +43,9 @@ function createCard(overrides = {}) {
         entity_id: "sensor.energy",
         state: "1234.5",
         attributes: {
+          device_class: "energy",
           friendly_name: "Fallback name",
+          state_class: "total_increasing",
           unit_of_measurement: "kWh",
         },
       },
@@ -243,4 +245,76 @@ test("honors Home Assistant's disabled digit grouping preference", () => {
 
   assert.match(card.shadowRoot.innerHTML, /1235 kWh/);
   assert.doesNotMatch(card.shadowRoot.innerHTML, /1[.'’\s]235 kWh/);
+});
+
+test("requests one recorder-calculated total per entity", async () => {
+  const calls = [];
+  const card = createCard({
+    callWS: async (message) => {
+      calls.push(message);
+      return { change: 42.5 };
+    },
+  });
+  card._collectionStart = new Date("2025-01-01T00:00:00Z");
+  card._collectionEnd = new Date("2026-01-01T00:00:00Z");
+  card._lastFetchKey = card._buildFetchKey(["sensor.energy"]);
+
+  await card._fetchData(["sensor.energy"], card._lastFetchKey);
+
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0], {
+    type: "recorder/statistic_during_period",
+    statistic_id: "sensor.energy",
+    fixed_period: {
+      start_time: "2025-01-01T00:00:00.000Z",
+      end_time: "2026-01-01T00:00:00.000Z",
+    },
+  });
+  assert.equal(card._items[0].consumptionKWh, 42.5);
+});
+
+test("does not refetch a historical period when the live state changes", async () => {
+  let callCount = 0;
+  const card = createCard({
+    callWS: async () => {
+      callCount += 1;
+      return { change: 42.5 };
+    },
+  });
+  card._collectionStart = new Date("2025-01-01T00:00:00Z");
+  card._collectionEnd = new Date("2026-01-01T00:00:00Z");
+  card._lastFetchKey = card._buildFetchKey(["sensor.energy"]);
+
+  await card._fetchData(["sensor.energy"], card._lastFetchKey);
+  card._hass.states["sensor.energy"].state = "9999";
+  card._maybeFetch();
+
+  assert.equal(callCount, 1);
+  assert.equal(card._items[0].consumptionKWh, 42.5);
+});
+
+test("keeps the live correction for a period containing now", async () => {
+  const calls = [];
+  const card = createCard({
+    callWS: async (message) => {
+      calls.push(message);
+      if (message.type === "recorder/statistic_during_period") {
+        return { change: 5 };
+      }
+      return {
+        "sensor.energy": [{ state: 10 }],
+      };
+    },
+  });
+  card._hass.states["sensor.energy"].state = "12";
+  card._collectionStart = new Date(Date.now() - 86400000);
+  card._collectionEnd = new Date(Date.now() + 60000);
+  card._lastFetchKey = card._buildFetchKey(["sensor.energy"]);
+
+  await card._fetchData(["sensor.energy"], card._lastFetchKey);
+
+  assert.equal(card._items[0].consumptionKWh, 7);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].type, "recorder/statistics_during_period");
+  assert.ok(new Date(calls[1].end_time).getTime() <= Date.now());
 });

@@ -6,7 +6,7 @@ A Home Assistant dashboard card for energy consumption, costs, and percentage-ba
 
 ## Features
 
-- Reads recorder statistics for the active Energy dashboard period
+- Reads one recorder-calculated total per entity for the active Energy dashboard period
 - Displays all visible energy sensors with an optional exclusion list
 - Includes a built-in visual card editor
 - Narrows the visual price-entity picker to monetary sensors and validates `/kWh` units
