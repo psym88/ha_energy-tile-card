@@ -275,21 +275,27 @@ test("requests one recorder-calculated total per entity", async () => {
 
 test("does not refetch a historical period when the live state changes", async () => {
   let callCount = 0;
+  let renderCount = 0;
   const card = createCard({
     callWS: async () => {
       callCount += 1;
       return { change: 42.5 };
     },
   });
+  card._render = () => {
+    renderCount += 1;
+  };
   card._collectionStart = new Date("2025-01-01T00:00:00Z");
   card._collectionEnd = new Date("2026-01-01T00:00:00Z");
   card._lastFetchKey = card._buildFetchKey(["sensor.energy"]);
 
   await card._fetchData(["sensor.energy"], card._lastFetchKey);
+  const rendersAfterFetch = renderCount;
   card._hass.states["sensor.energy"].state = "9999";
   card._maybeFetch();
 
   assert.equal(callCount, 1);
+  assert.equal(renderCount, rendersAfterFetch);
   assert.equal(card._items[0].consumptionKWh, 42.5);
 });
 

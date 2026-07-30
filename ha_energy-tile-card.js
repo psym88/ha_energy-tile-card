@@ -433,8 +433,6 @@ class HaEnergyTileCard extends HTMLElement {
     this._lastFetchKey = "";
     this._requestId = 0;
     this._resolvedEntities = [];
-    this._cachedEntityIds = [];
-    this._statistics = undefined;
 
     this._onClick = this._onClick.bind(this);
   }
@@ -464,8 +462,6 @@ class HaEnergyTileCard extends HTMLElement {
     this._error = null;
     this._loading = true;
     this._lastFetchKey = "";
-    this._cachedEntityIds = [];
-    this._statistics = undefined;
 
     this._setupEnergyCollection();
     this._render();
@@ -613,13 +609,7 @@ class HaEnergyTileCard extends HTMLElement {
     this._resolvedEntities = entityIds;
 
     const key = this._buildFetchKey(entityIds);
-    if (key === this._lastFetchKey) {
-      if (this._statistics) {
-        this._items = this._buildItems(this._cachedEntityIds, this._statistics);
-        this._render();
-      }
-      return;
-    }
+    if (key === this._lastFetchKey) return;
 
     if (this._fetchInFlight) {
       this._pendingFetch = true;
@@ -673,16 +663,12 @@ class HaEnergyTileCard extends HTMLElement {
 
       if (requestId !== this._requestId || fetchKey !== this._lastFetchKey) return;
 
-      this._statistics = stats;
-      this._cachedEntityIds = validEntities;
       this._items = this._buildItems(validEntities, stats);
     } catch (error) {
       if (requestId !== this._requestId) return;
 
       this._error = error instanceof Error ? error.message : "Unknown error";
       this._items = [];
-      this._cachedEntityIds = [];
-      this._statistics = undefined;
       console.error("[ha_energy-tile-card]", error);
     } finally {
       if (requestId === this._requestId) {
@@ -1290,7 +1276,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c HA_ENERGY-TILE-CARD %c v2.2.0-beta.1 ",
+  "%c HA_ENERGY-TILE-CARD %c v2.2.0-beta.2 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );
