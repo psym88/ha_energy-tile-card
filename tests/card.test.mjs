@@ -318,3 +318,43 @@ test("uses only the recorder total for a period containing now", async () => {
   assert.equal(calls.length, 1);
   assert.equal(calls[0].type, "recorder/statistic_during_period");
 });
+
+test("refreshes active periods after Home Assistant generates statistics", async () => {
+  let eventCallback;
+  let eventType;
+  let fetchCount = 0;
+  let unsubscribeCount = 0;
+  const card = createCard({
+    connection: {
+      subscribeEvents(callback, type) {
+        eventCallback = callback;
+        eventType = type;
+        return Promise.resolve(() => {
+          unsubscribeCount += 1;
+        });
+      },
+    },
+  });
+  card._collectionStart = new Date(Date.now() - 86400000);
+  card._collectionEnd = new Date(Date.now() + 60000);
+  card._lastFetchKey = "cached";
+  card._maybeFetch = () => {
+    fetchCount += 1;
+  };
+
+  card._setupStatisticsSubscription();
+  await Promise.resolve();
+  eventCallback();
+
+  assert.equal(eventType, "recorder_5min_statistics_generated");
+  assert.equal(card._lastFetchKey, "");
+  assert.equal(fetchCount, 1);
+
+  card._collectionStart = new Date("2025-01-01T00:00:00Z");
+  card._collectionEnd = new Date("2026-01-01T00:00:00Z");
+  eventCallback();
+  assert.equal(fetchCount, 1);
+
+  card.disconnectedCallback();
+  assert.equal(unsubscribeCount, 1);
+});

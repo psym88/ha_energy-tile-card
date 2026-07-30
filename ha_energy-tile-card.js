@@ -7,7 +7,7 @@ const ENERGY_UNITS = {
 
 const COLLECTION_RETRY_INTERVAL_MS = 500;
 const MAX_COLLECTION_RETRIES = 20;
-const ACTIVE_STATISTICS_REFRESH_MS = 5 * 60 * 1000;
+const STATISTICS_GENERATED_EVENT = "recorder_5min_statistics_generated";
 const ZERO_CONSUMPTION_EPSILON_KWH = 0.01;
 const PRICE_UNIT_PATTERN = /^.+\/kWh$/i;
 const PRICE_PER_KWH_UNITS = Object.freeze([
@@ -387,6 +387,10 @@ class HaEnergyTileCard extends HTMLElement {
     this._collectionRetryCount = 0;
     this._subscribedCollectionKey = undefined;
     this._subscribedCollection = undefined;
+    this._statisticsSubscriptionConnection = undefined;
+    this._statisticsSubscriptionPending = false;
+    this._statisticsSubscriptionId = 0;
+    this._statisticsUnsubscribe = undefined;
 
     this._fetchInFlight = false;
     this._pendingFetch = false;
@@ -402,6 +406,7 @@ class HaEnergyTileCard extends HTMLElement {
     this._hass = hass;
 
     this._setupEnergyCollection();
+    this._setupStatisticsSubscription();
 
     if (firstHass && this._config) {
       this._render();
@@ -431,6 +436,7 @@ class HaEnergyTileCard extends HTMLElement {
   connectedCallback() {
     this.shadowRoot?.addEventListener("click", this._onClick);
     this._setupEnergyCollection();
+    this._setupStatisticsSubscription();
     this._render();
     this._maybeFetch();
   }
@@ -442,6 +448,7 @@ class HaEnergyTileCard extends HTMLElement {
     this._collectionUnsubscribe = undefined;
     this._subscribedCollectionKey = undefined;
     this._subscribedCollection = undefined;
+    this._clearStatisticsSubscription();
 
     if (this._collectionRetryTimer !== undefined) {
       window.clearTimeout(this._collectionRetryTimer);
@@ -452,6 +459,64 @@ class HaEnergyTileCard extends HTMLElement {
   _onClick(event) {
     const card = event.target?.closest?.("ha-card[data-entity]");
     if (card) this._handleTap(card.dataset.entity);
+  }
+
+  _clearStatisticsSubscription() {
+    this._statisticsSubscriptionId += 1;
+    this._statisticsUnsubscribe?.();
+    this._statisticsUnsubscribe = undefined;
+    this._statisticsSubscriptionConnection = undefined;
+    this._statisticsSubscriptionPending = false;
+  }
+
+  _setupStatisticsSubscription() {
+    const connection = this.hass?.connection;
+    if (
+      !connection?.subscribeEvents ||
+      (this._statisticsSubscriptionConnection === connection &&
+        (this._statisticsUnsubscribe || this._statisticsSubscriptionPending))
+    ) {
+      return;
+    }
+
+    this._clearStatisticsSubscription();
+    this._statisticsSubscriptionConnection = connection;
+    this._statisticsSubscriptionPending = true;
+    const subscriptionId = this._statisticsSubscriptionId;
+
+    Promise.resolve(
+      connection.subscribeEvents(() => {
+        if (
+          subscriptionId !== this._statisticsSubscriptionId ||
+          !this._collectionStart ||
+          !this._collectionEnd ||
+          !periodContainsNow(this._collectionStart, this._collectionEnd)
+        ) {
+          return;
+        }
+
+        this._lastFetchKey = "";
+        this._maybeFetch();
+      }, STATISTICS_GENERATED_EVENT)
+    )
+      .then((unsubscribe) => {
+        if (subscriptionId !== this._statisticsSubscriptionId) {
+          unsubscribe?.();
+          return;
+        }
+
+        this._statisticsSubscriptionPending = false;
+        this._statisticsUnsubscribe = unsubscribe;
+      })
+      .catch((error) => {
+        if (subscriptionId !== this._statisticsSubscriptionId) return;
+        this._statisticsSubscriptionPending = false;
+        this._statisticsSubscriptionConnection = undefined;
+        console.warn(
+          "[ha_energy-tile-card] Statistics event subscription failed",
+          error
+        );
+      });
   }
 
   _setupEnergyCollection() {
@@ -549,16 +614,10 @@ class HaEnergyTileCard extends HTMLElement {
   }
 
   _buildFetchKey(entityIds) {
-    const { start, end } = this._getActivePeriodRange();
-    const activeRefreshBucket = periodContainsNow(start, end)
-      ? Math.floor(Date.now() / ACTIVE_STATISTICS_REFRESH_MS)
-      : "";
-
     return [
       entityIds.join(","),
       this._collectionStart?.toISOString() || "",
       this._collectionEnd?.toISOString() || "",
-      activeRefreshBucket,
     ].join("|");
   }
 
@@ -1199,7 +1258,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c HA_ENERGY-TILE-CARD %c v2.2.0-beta.3 ",
+  "%c HA_ENERGY-TILE-CARD %c v2.2.0-beta.4 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );
