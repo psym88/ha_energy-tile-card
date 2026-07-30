@@ -299,17 +299,12 @@ test("does not refetch a historical period when the live state changes", async (
   assert.equal(card._items[0].consumptionKWh, 42.5);
 });
 
-test("keeps the live correction for a period containing now", async () => {
+test("uses only the recorder total for a period containing now", async () => {
   const calls = [];
   const card = createCard({
     callWS: async (message) => {
       calls.push(message);
-      if (message.type === "recorder/statistic_during_period") {
-        return { change: 5 };
-      }
-      return {
-        "sensor.energy": [{ state: 10 }],
-      };
+      return { change: 5 };
     },
   });
   card._hass.states["sensor.energy"].state = "12";
@@ -319,8 +314,7 @@ test("keeps the live correction for a period containing now", async () => {
 
   await card._fetchData(["sensor.energy"], card._lastFetchKey);
 
-  assert.equal(card._items[0].consumptionKWh, 7);
-  assert.equal(calls.length, 2);
-  assert.equal(calls[1].type, "recorder/statistics_during_period");
-  assert.ok(new Date(calls[1].end_time).getTime() <= Date.now());
+  assert.equal(card._items[0].consumptionKWh, 5);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].type, "recorder/statistic_during_period");
 });

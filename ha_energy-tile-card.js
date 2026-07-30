@@ -7,8 +7,7 @@ const ENERGY_UNITS = {
 
 const COLLECTION_RETRY_INTERVAL_MS = 500;
 const MAX_COLLECTION_RETRIES = 20;
-const LIVE_STATISTICS_REFRESH_MS = 5 * 60 * 1000;
-const LIVE_STATE_LOOKBACK_MS = 2 * 60 * 60 * 1000;
+const ACTIVE_STATISTICS_REFRESH_MS = 5 * 60 * 1000;
 const ZERO_CONSUMPTION_EPSILON_KWH = 0.01;
 const PRICE_UNIT_PATTERN = /^.+\/kWh$/i;
 const PRICE_PER_KWH_UNITS = Object.freeze([
@@ -103,50 +102,11 @@ async function fetchStatisticTotals(hass, statisticIds, start, end) {
   return Object.fromEntries(entries);
 }
 
-async function fetchLatestStatisticStates(hass, statisticIds, start, end) {
-  if (!statisticIds.length) return {};
-
-  const liveEnd = new Date(Math.min(end.getTime(), Date.now()));
-  const lookbackStart = new Date(
-    Math.max(start.getTime(), liveEnd.getTime() - LIVE_STATE_LOOKBACK_MS)
-  );
-
-  return hass.callWS({
-    type: "recorder/statistics_during_period",
-    start_time: lookbackStart.toISOString(),
-    end_time: liveEnd.toISOString(),
-    statistic_ids: statisticIds,
-    period: "hour",
-    types: ["state"],
-  });
-}
-
 function getStatisticChange(statistic) {
   return typeof statistic?.change === "number" ? statistic.change : 0;
 }
 
-function getStatisticState(row) {
-  if (!row || typeof row !== "object") return null;
-  return typeof row.state === "number" ? row.state : null;
-}
-
-function getLastStatisticState(rows) {
-  if (!Array.isArray(rows) || rows.length === 0) return null;
-
-  for (let index = rows.length - 1; index >= 0; index -= 1) {
-    const value = getStatisticState(rows[index]);
-    if (Number.isFinite(value)) return value;
-  }
-
-  return null;
-}
-
-function getCurrentSensorValue(stateObj) {
-  const value = parseFloat(stateObj?.state);
-  return Number.isFinite(value) ? value : null;
-}
-
-function shouldIncludeLiveDelta(start, end) {
+function periodContainsNow(start, end) {
   const now = Date.now();
   return start.getTime() <= now && end.getTime() >= now;
 }
@@ -590,15 +550,15 @@ class HaEnergyTileCard extends HTMLElement {
 
   _buildFetchKey(entityIds) {
     const { start, end } = this._getActivePeriodRange();
-    const liveRefreshBucket = shouldIncludeLiveDelta(start, end)
-      ? Math.floor(Date.now() / LIVE_STATISTICS_REFRESH_MS)
+    const activeRefreshBucket = periodContainsNow(start, end)
+      ? Math.floor(Date.now() / ACTIVE_STATISTICS_REFRESH_MS)
       : "";
 
     return [
       entityIds.join(","),
       this._collectionStart?.toISOString() || "",
       this._collectionEnd?.toISOString() || "",
-      liveRefreshBucket,
+      activeRefreshBucket,
     ].join("|");
   }
 
@@ -645,21 +605,6 @@ class HaEnergyTileCard extends HTMLElement {
         period.start,
         period.end
       );
-
-      if (shouldIncludeLiveDelta(period.start, period.end)) {
-        const latestStates = await fetchLatestStatisticStates(
-          this.hass,
-          validEntities,
-          period.start,
-          period.end
-        );
-
-        for (const entityId of validEntities) {
-          stats[entityId].lastState = getLastStatisticState(
-            latestStates[entityId]
-          );
-        }
-      }
 
       if (requestId !== this._requestId || fetchKey !== this._lastFetchKey) return;
 
@@ -734,29 +679,7 @@ class HaEnergyTileCard extends HTMLElement {
   _getConsumptionKWh(entityId, stats) {
     const stateObj = this.hass.states?.[entityId];
     const unit = stateObj?.attributes?.unit_of_measurement;
-    const statistic = stats[entityId];
-
-    let consumption = getStatisticChange(statistic);
-
-    try {
-      const { start, end } = this._getActivePeriodRange();
-
-      if (shouldIncludeLiveDelta(start, end)) {
-        const currentValue = getCurrentSensorValue(stateObj);
-        const lastStatisticState = statistic?.lastState;
-
-        if (currentValue !== null && lastStatisticState !== null) {
-          const liveDelta = currentValue - lastStatisticState;
-
-          if (liveDelta > 0) {
-            consumption += liveDelta;
-          }
-        }
-      }
-    } catch (_) {
-      // Fall back to recorder statistics while the collection is not ready.
-    }
-
+    const consumption = getStatisticChange(stats[entityId]);
     return convertEnergy(consumption, unit, "kWh");
   }
 
@@ -1271,12 +1194,12 @@ window.customCards.push({
   type: "ha_energy-tile-card",
   name: "Energy Tile Card",
   description:
-    "Tile card with consumption, cost, percentage bars, show_zero, and tap_action per entity. Uses recorder statistics with a live correction based on the latest statistics state.",
+    "Tile card with consumption, cost, percentage bars, show_zero, and tap_action per entity. Uses recorder-calculated period totals.",
   preview: true,
 });
 
 console.info(
-  "%c HA_ENERGY-TILE-CARD %c v2.2.0-beta.2 ",
+  "%c HA_ENERGY-TILE-CARD %c v2.2.0-beta.3 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );
