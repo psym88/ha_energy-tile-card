@@ -111,6 +111,7 @@ test("provides a visual editor without locale configuration fields", () => {
   assert.ok(!fields.includes("entities"));
   assert.ok(fields.includes("price_entity"));
   assert.ok(fields.includes("tap_action"));
+  assert.ok(fields.includes("debug"));
   assert.ok(!fields.includes("currency"));
   assert.ok(!fields.includes("language"));
   assert.ok(!fields.includes("locale"));
@@ -245,6 +246,29 @@ test("honors Home Assistant's disabled digit grouping preference", () => {
 
   assert.match(card.shadowRoot.innerHTML, /1235 kWh/);
   assert.doesNotMatch(card.shadowRoot.innerHTML, /1[.'’\s]235 kWh/);
+});
+
+test("renders the optional recorder debug information first", () => {
+  const card = createCard();
+  card._config.debug = true;
+  card._collectionStart = new Date("2025-01-01T00:00:00Z");
+  card._collectionEnd = new Date("2026-01-01T00:00:00Z");
+  card._statisticsUnsubscribe = () => {};
+  card._lastStatisticsEvent = Date.now() - 65000;
+  card._scheduleDebugUpdate = () => {};
+
+  card._render();
+
+  const html = card.shadowRoot.innerHTML;
+  assert.ok(
+    html.indexOf('<ha-card class="debug-card">') <
+      html.indexOf('<ha-card class="entity-card')
+  );
+  assert.match(html, /recorder\/statistic_during_period/);
+  assert.match(html, /Subscription/);
+  assert.match(html, /Subscribed/);
+  assert.match(html, /id="debug-last-event"/);
+  assert.match(html, /Minute/);
 });
 
 test("requests one recorder-calculated total per entity", async () => {

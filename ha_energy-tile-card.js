@@ -8,6 +8,7 @@ const ENERGY_UNITS = {
 const COLLECTION_RETRY_INTERVAL_MS = 500;
 const MAX_COLLECTION_RETRIES = 20;
 const STATISTICS_GENERATED_EVENT = "recorder_5min_statistics_generated";
+const DEBUG_RELATIVE_UPDATE_MS = 10000;
 const ZERO_CONSUMPTION_EPSILON_KWH = 0.01;
 const PRICE_UNIT_PATTERN = /^.+\/kWh$/i;
 const PRICE_PER_KWH_UNITS = Object.freeze([
@@ -111,6 +112,46 @@ function periodContainsNow(start, end) {
   return start.getTime() <= now && end.getTime() >= now;
 }
 
+function formatDebugDateTime(hass, value) {
+  if (!value) return "Not available";
+
+  try {
+    return new Intl.DateTimeFormat(getUserLanguage(hass), {
+      dateStyle: "short",
+      timeStyle: "medium",
+    }).format(value);
+  } catch (_) {
+    return value.toISOString();
+  }
+}
+
+function formatRelativeTime(hass, timestamp) {
+  if (!timestamp) return "Never";
+
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  let value = elapsedSeconds;
+  let unit = "second";
+
+  if (elapsedSeconds >= 86400) {
+    value = Math.floor(elapsedSeconds / 86400);
+    unit = "day";
+  } else if (elapsedSeconds >= 3600) {
+    value = Math.floor(elapsedSeconds / 3600);
+    unit = "hour";
+  } else if (elapsedSeconds >= 60) {
+    value = Math.floor(elapsedSeconds / 60);
+    unit = "minute";
+  }
+
+  try {
+    return new Intl.RelativeTimeFormat(getUserLanguage(hass), {
+      numeric: "auto",
+    }).format(-value, unit);
+  } catch (_) {
+    return `${value} ${unit}${value === 1 ? "" : "s"} ago`;
+  }
+}
+
 function configValueIsFalse(value) {
   if (typeof value === "string") {
     return ["false", "no", "off", "0"].includes(value.trim().toLowerCase());
@@ -127,6 +168,7 @@ function normalizeConfig(config) {
 
   const normalized = {
     ...config,
+    debug: config.debug === true,
     display_unit: displayUnit,
     show_zero: !configValueIsFalse(config.show_zero),
   };
@@ -391,6 +433,8 @@ class HaEnergyTileCard extends HTMLElement {
     this._statisticsSubscriptionPending = false;
     this._statisticsSubscriptionId = 0;
     this._statisticsUnsubscribe = undefined;
+    this._lastStatisticsEvent = undefined;
+    this._debugUpdateTimer = undefined;
 
     this._fetchInFlight = false;
     this._pendingFetch = false;
@@ -449,6 +493,7 @@ class HaEnergyTileCard extends HTMLElement {
     this._subscribedCollectionKey = undefined;
     this._subscribedCollection = undefined;
     this._clearStatisticsSubscription();
+    this._clearDebugTimer();
 
     if (this._collectionRetryTimer !== undefined) {
       window.clearTimeout(this._collectionRetryTimer);
@@ -459,6 +504,33 @@ class HaEnergyTileCard extends HTMLElement {
   _onClick(event) {
     const card = event.target?.closest?.("ha-card[data-entity]");
     if (card) this._handleTap(card.dataset.entity);
+  }
+
+  _clearDebugTimer() {
+    if (this._debugUpdateTimer === undefined) return;
+    window.clearTimeout(this._debugUpdateTimer);
+    this._debugUpdateTimer = undefined;
+  }
+
+  _scheduleDebugUpdate() {
+    this._clearDebugTimer();
+    if (!this._config?.debug || !this._lastStatisticsEvent) return;
+
+    this._debugUpdateTimer = window.setTimeout(() => {
+      this._debugUpdateTimer = undefined;
+      this._updateDebugLastEvent();
+      this._scheduleDebugUpdate();
+    }, DEBUG_RELATIVE_UPDATE_MS);
+  }
+
+  _updateDebugLastEvent() {
+    const value = this.shadowRoot?.querySelector?.("#debug-last-event");
+    if (value) {
+      value.textContent = formatRelativeTime(
+        this.hass,
+        this._lastStatisticsEvent
+      );
+    }
   }
 
   _clearStatisticsSubscription() {
@@ -485,7 +557,14 @@ class HaEnergyTileCard extends HTMLElement {
     const subscriptionId = this._statisticsSubscriptionId;
 
     Promise.resolve(
-      connection.subscribeEvents(() => {
+      connection.subscribeEvents((event) => {
+        const eventTimestamp = Date.parse(event?.time_fired);
+        this._lastStatisticsEvent = Number.isFinite(eventTimestamp)
+          ? eventTimestamp
+          : Date.now();
+        this._updateDebugLastEvent();
+        this._scheduleDebugUpdate();
+
         if (
           subscriptionId !== this._statisticsSubscriptionId ||
           !this._collectionStart ||
@@ -507,11 +586,13 @@ class HaEnergyTileCard extends HTMLElement {
 
         this._statisticsSubscriptionPending = false;
         this._statisticsUnsubscribe = unsubscribe;
+        if (this._config?.debug) this._render();
       })
       .catch((error) => {
         if (subscriptionId !== this._statisticsSubscriptionId) return;
         this._statisticsSubscriptionPending = false;
         this._statisticsSubscriptionConnection = undefined;
+        if (this._config?.debug) this._render();
         console.warn(
           "[ha_energy-tile-card] Statistics event subscription failed",
           error
@@ -841,6 +922,37 @@ class HaEnergyTileCard extends HTMLElement {
     `;
   }
 
+  _renderDebug() {
+    if (!this._config?.debug) return "";
+
+    const subscriptionStatus = this._statisticsUnsubscribe
+      ? "Subscribed"
+      : this._statisticsSubscriptionPending
+        ? "Pending"
+        : "Not subscribed";
+    const rangeStart = formatDebugDateTime(this.hass, this._collectionStart);
+    const rangeEnd = formatDebugDateTime(this.hass, this._collectionEnd);
+
+    return `
+      <ha-card class="debug-card">
+        <div class="debug-grid">
+          <span class="debug-label">Data source</span>
+          <code>recorder/statistic_during_period</code>
+          <span class="debug-label">From</span>
+          <span>${escapeHtml(rangeStart)}</span>
+          <span class="debug-label">To</span>
+          <span>${escapeHtml(rangeEnd)}</span>
+          <span class="debug-label">Subscription</span>
+          <span>${escapeHtml(subscriptionStatus)}</span>
+          <span class="debug-label">Last event</span>
+          <span id="debug-last-event">${escapeHtml(
+            formatRelativeTime(this.hass, this._lastStatisticsEvent)
+          )}</span>
+        </div>
+      </ha-card>
+    `;
+  }
+
   _renderEntityTile(item, locale, currency, numberFormatOptions) {
     const entityId = item.entity;
     const icon = this._getIcon(entityId);
@@ -898,6 +1010,7 @@ class HaEnergyTileCard extends HTMLElement {
     if (!this.shadowRoot) return;
 
     if (!this._config || !this.hass) {
+      this._clearDebugTimer();
       this.shadowRoot.innerHTML = `<style>${this._styles()}</style>`;
       return;
     }
@@ -905,6 +1018,7 @@ class HaEnergyTileCard extends HTMLElement {
     if (this._error) {
       this.shadowRoot.innerHTML = `
         <style>${this._styles()}</style>
+        ${this._renderDebug()}
         <ha-card>
           <div class="error">
             <ha-icon icon="mdi:alert-circle"></ha-icon>
@@ -913,6 +1027,7 @@ class HaEnergyTileCard extends HTMLElement {
           ${this._renderWarnings()}
         </ha-card>
       `;
+      this._scheduleDebugUpdate();
       return;
     }
 
@@ -939,10 +1054,12 @@ class HaEnergyTileCard extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>${this._styles()}</style>
       <div class="list-container">
+        ${this._renderDebug()}
         ${this._renderWarnings()}
         ${content}
       </div>
     `;
+    this._scheduleDebugUpdate();
   }
 
   _styles() {
@@ -960,6 +1077,31 @@ class HaEnergyTileCard extends HTMLElement {
       .entity-card {
         display: block;
         overflow: hidden;
+      }
+
+      .debug-card {
+        display: block;
+      }
+
+      .debug-grid {
+        display: grid;
+        grid-template-columns: max-content minmax(0, 1fr);
+        gap: 6px 12px;
+        padding: 12px 14px;
+        color: var(--secondary-text-color);
+        font-size: var(--ha-font-size-s);
+        line-height: var(--ha-line-height-normal);
+      }
+
+      .debug-grid code,
+      .debug-grid span {
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+
+      .debug-label {
+        color: var(--primary-text-color);
+        font-weight: var(--ha-font-weight-medium);
       }
 
       .entity-card.clickable {
@@ -1142,6 +1284,10 @@ class HaEnergyTileCard extends HTMLElement {
                 },
               },
             },
+            {
+              name: "debug",
+              selector: { boolean: {} },
+            },
           ],
         },
         {
@@ -1215,6 +1361,7 @@ class HaEnergyTileCard extends HTMLElement {
           name: "Name",
           state_content: "State content",
           tap_action: "Behavior on tap",
+          debug: "Debug information",
         };
         return labels[schema.name];
       },
@@ -1258,7 +1405,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c HA_ENERGY-TILE-CARD %c v2.2.0-beta.4 ",
+  "%c HA_ENERGY-TILE-CARD %c v2.2.0-beta.5 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );
