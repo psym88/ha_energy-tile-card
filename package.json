@@ -1,6 +1,6 @@
 {
   "name": "ha_energy-tile-card",
-  "version": "2.2.0-beta.5",
+  "version": "2.2.0-beta.6",
   "private": true,
   "description": "Energy consumption tiles for Home Assistant",
   "scripts": {

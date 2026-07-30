@@ -8,6 +8,7 @@ const ENERGY_UNITS = {
 const COLLECTION_RETRY_INTERVAL_MS = 500;
 const MAX_COLLECTION_RETRIES = 20;
 const STATISTICS_GENERATED_EVENT = "recorder_5min_statistics_generated";
+const STATISTICS_EVENT_REFRESH_DELAY_MS = 10000;
 const DEBUG_RELATIVE_UPDATE_MS = 10000;
 const ZERO_CONSUMPTION_EPSILON_KWH = 0.01;
 const PRICE_UNIT_PATTERN = /^.+\/kWh$/i;
@@ -433,6 +434,7 @@ class HaEnergyTileCard extends HTMLElement {
     this._statisticsSubscriptionPending = false;
     this._statisticsSubscriptionId = 0;
     this._statisticsUnsubscribe = undefined;
+    this._statisticsRefreshTimer = undefined;
     this._lastStatisticsEvent = undefined;
     this._debugUpdateTimer = undefined;
 
@@ -535,6 +537,10 @@ class HaEnergyTileCard extends HTMLElement {
 
   _clearStatisticsSubscription() {
     this._statisticsSubscriptionId += 1;
+    if (this._statisticsRefreshTimer !== undefined) {
+      window.clearTimeout(this._statisticsRefreshTimer);
+      this._statisticsRefreshTimer = undefined;
+    }
     this._statisticsUnsubscribe?.();
     this._statisticsUnsubscribe = undefined;
     this._statisticsSubscriptionConnection = undefined;
@@ -574,8 +580,24 @@ class HaEnergyTileCard extends HTMLElement {
           return;
         }
 
-        this._lastFetchKey = "";
-        this._maybeFetch();
+        if (this._statisticsRefreshTimer !== undefined) {
+          window.clearTimeout(this._statisticsRefreshTimer);
+        }
+
+        this._statisticsRefreshTimer = window.setTimeout(() => {
+          this._statisticsRefreshTimer = undefined;
+          if (
+            subscriptionId !== this._statisticsSubscriptionId ||
+            !this._collectionStart ||
+            !this._collectionEnd ||
+            !periodContainsNow(this._collectionStart, this._collectionEnd)
+          ) {
+            return;
+          }
+
+          this._lastFetchKey = "";
+          this._maybeFetch();
+        }, STATISTICS_EVENT_REFRESH_DELAY_MS);
       }, STATISTICS_GENERATED_EVENT)
     )
       .then((unsubscribe) => {
@@ -1405,7 +1427,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c HA_ENERGY-TILE-CARD %c v2.2.0-beta.5 ",
+  "%c HA_ENERGY-TILE-CARD %c v2.2.0-beta.6 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );

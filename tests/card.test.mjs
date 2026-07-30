@@ -346,8 +346,12 @@ test("uses only the recorder total for a period containing now", async () => {
 test("refreshes active periods after Home Assistant generates statistics", async () => {
   let eventCallback;
   let eventType;
+  let refreshCallback;
+  let refreshDelay;
   let fetchCount = 0;
   let unsubscribeCount = 0;
+  const originalSetTimeout = window.setTimeout;
+  const originalClearTimeout = window.clearTimeout;
   const card = createCard({
     connection: {
       subscribeEvents(callback, type) {
@@ -366,19 +370,36 @@ test("refreshes active periods after Home Assistant generates statistics", async
     fetchCount += 1;
   };
 
-  card._setupStatisticsSubscription();
-  await Promise.resolve();
-  eventCallback();
+  try {
+    window.setTimeout = (callback, delay) => {
+      refreshCallback = callback;
+      refreshDelay = delay;
+      return 1;
+    };
+    window.clearTimeout = () => {};
 
-  assert.equal(eventType, "recorder_5min_statistics_generated");
-  assert.equal(card._lastFetchKey, "");
-  assert.equal(fetchCount, 1);
+    card._setupStatisticsSubscription();
+    await Promise.resolve();
+    eventCallback();
 
-  card._collectionStart = new Date("2025-01-01T00:00:00Z");
-  card._collectionEnd = new Date("2026-01-01T00:00:00Z");
-  eventCallback();
-  assert.equal(fetchCount, 1);
+    assert.equal(eventType, "recorder_5min_statistics_generated");
+    assert.equal(refreshDelay, 10000);
+    assert.equal(card._lastFetchKey, "cached");
+    assert.equal(fetchCount, 0);
 
-  card.disconnectedCallback();
+    refreshCallback();
+    assert.equal(card._lastFetchKey, "");
+    assert.equal(fetchCount, 1);
+
+    card._collectionStart = new Date("2025-01-01T00:00:00Z");
+    card._collectionEnd = new Date("2026-01-01T00:00:00Z");
+    eventCallback();
+    assert.equal(fetchCount, 1);
+  } finally {
+    window.setTimeout = originalSetTimeout;
+    window.clearTimeout = originalClearTimeout;
+    card.disconnectedCallback();
+  }
+
   assert.equal(unsubscribeCount, 1);
 });
