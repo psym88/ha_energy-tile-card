@@ -11,7 +11,9 @@ A Home Assistant dashboard card for energy consumption, costs, and percentage-ba
 - Displays all visible energy sensors with an optional exclusion list
 - Includes a built-in visual card editor
 - Narrows the visual price-entity picker to monetary sensors and validates `/kWh` units
-- Displays consumption, optional costs, and a percentage bar
+- Displays consumption and optional costs next to a ring that shows the share of the whole house consumption
+- Draws each ring where the previous one ended, so the rings together form the circle of the house consumption
+- Adds one row for the part of the house consumption that no listed sensor covers
 - Supports `Wh`, `kWh`, and `MWh`
 - Opens the entity's more-info dialog when selected
 
@@ -46,6 +48,8 @@ If the resource is missing, add `/hacsfiles/ha_energy-tile-card/ha_energy-tile-c
 > **Breaking change in v1.0.4:** Replace `custom:energy-tile-card` with `custom:ha_energy-tile-card` in existing dashboards.
 >
 > **Breaking change in v2.0.0:** `entity`, `entities`, and `include_all_energy` are no longer supported. The card always discovers visible Energy sensors and uses `exclude_entities` to hide individual sensors.
+>
+> **Breaking change in v2.3.0:** Each row shows a consumption ring instead of an icon and a percentage bar, so `icon` no longer has any effect.
 
 Display all visible energy sensors:
 
@@ -75,6 +79,8 @@ name:
 state_content:
   - state
 show_zero: false
+show_untracked: true
+untracked_name: Not captured consumption
 ```
 
 | Option | Required | Default | Description |
@@ -85,10 +91,17 @@ show_zero: false
 | `currency` | No | Home Assistant currency | Optional YAML override for Home Assistant's configured currency |
 | `display_unit` | No | `kWh` | `Wh`, `kWh`, or `MWh` |
 | `show_zero` | No | `true` | Whether to include sensors without consumption |
-| `icon` | No | Sensor icon | One icon applied to every tile |
+| `show_untracked` | No | `true` | Adds a row for the part of the house consumption no listed sensor covers |
+| `untracked_name` | No | `Not captured consumption` | Name of that row |
 | `name` | No | `entity` | Name parts: `entity`, `device`, `area`, `floor` |
 | `state_content` | No | `state` | Secondary content: `state`, `device_name`, `area_name`, `floor_name` |
 | `tap_action.action` | No | `more-info` | `more-info` or `none` |
+
+## Consumption rings
+
+Every row carries a ring instead of an icon. A ring is a slice of one shared circle: the whole circle is the house consumption of the selected period, a slice is as wide as the device is large, and each slice starts where the previous one ended. The card reads the house consumption from the Energy collection named by `collection_key`, the same source the Energy dashboard uses: the configured home meter if there is one, otherwise the grid import plus solar and battery discharge that stayed in the house.
+
+What the listed sensors do not account for is shown as one additional row, `Not captured consumption`, so the circle is always complete. Set `show_untracked: false` to leave it out. When the dashboard has no consumption sources for the period, the card can only measure against the listed sensors: the rings then show the share within the list and the extra row stays away.
 
 ## Home Assistant settings
 

@@ -95,6 +95,163 @@ test("uses Home Assistant currency and user number format", () => {
   assert.match(card.shadowRoot.innerHTML, /1\.235 kWh/);
 });
 
+test("measures every ring against the house total and adds what is missing", () => {
+  const card = createCard();
+  card._config.show_untracked = true;
+  card._items = [
+    { entity: "sensor.first", consumptionKWh: 6, consumption: 6, displayUnit: "kWh", cost: null },
+    { entity: "sensor.second", consumptionKWh: 2, consumption: 2, displayUnit: "kWh", cost: null },
+  ];
+  card._houseTotalKWh = 10;
+
+  const rows = card._applyShares();
+
+  assert.deepEqual(
+    rows.map((row) => [row.arcStart, row.arcEnd]),
+    [
+      [0, 60],
+      [60, 80],
+      [80, 100],
+    ]
+  );
+  assert.equal(rows[2].untracked, true);
+  assert.equal(rows[2].consumptionKWh, 2);
+});
+
+test("keeps the circle inside the list when the collection has no house total", () => {
+  const card = createCard();
+  card._config.show_untracked = true;
+  card._items = [
+    { entity: "sensor.first", consumptionKWh: 6, consumption: 6, displayUnit: "kWh", cost: null },
+    { entity: "sensor.second", consumptionKWh: 2, consumption: 2, displayUnit: "kWh", cost: null },
+  ];
+  card._houseTotalKWh = null;
+
+  const rows = card._applyShares();
+
+  assert.equal(rows.length, 2);
+  assert.deepEqual(
+    rows.map((row) => row.percentage),
+    [75, 25]
+  );
+});
+
+test("hides the missing part when it is switched off", () => {
+  const card = createCard();
+  card._config.show_untracked = false;
+  card._items = [
+    { entity: "sensor.first", consumptionKWh: 6, consumption: 6, displayUnit: "kWh", cost: null },
+  ];
+  card._houseTotalKWh = 10;
+
+  assert.equal(card._applyShares().length, 1);
+});
+
+test("reads the house total of the period from the energy collection", () => {
+  const card = createCard({ callWS: async () => ({ change: 0 }) });
+  card._hass.connection = {
+    _energy_1: {
+      start: new Date("2025-01-01T00:00:00Z"),
+      end: new Date("2025-01-02T00:00:00Z"),
+      prefs: {
+        energy_sources: [
+          {
+            type: "grid",
+            stat_energy_from: "sensor.grid_import",
+            stat_energy_to: "sensor.grid_export",
+          },
+          { type: "solar", stat_energy_from: "sensor.solar" },
+        ],
+      },
+      stats: {
+        "sensor.grid_import": [{ change: 10 }],
+        "sensor.grid_export": [{ change: 2 }],
+        "sensor.solar": [{ change: 5 }],
+      },
+      subscribe: () => () => {},
+    },
+  };
+  card._hass.states["sensor.grid_import"] = {
+    entity_id: "sensor.grid_import",
+    state: "10",
+    attributes: {
+      device_class: "energy",
+      state_class: "total_increasing",
+      unit_of_measurement: "kWh",
+    },
+  };
+  card._config = {
+    collection_key: "energy_1",
+    display_unit: "kWh",
+    show_zero: false,
+    show_untracked: true,
+  };
+
+  card._setupEnergyCollection();
+
+  assert.equal(card._houseTotalKWh, 13);
+});
+
+test("prefers the configured home meter over the derived total", () => {
+  const card = createCard({ callWS: async () => ({ change: 0 }) });
+  card._items = [
+    { entity: "sensor.first", consumptionKWh: 1, consumption: 1, displayUnit: "kWh", cost: null },
+  ];
+  card._config = {
+    collection_key: "energy_1",
+    display_unit: "kWh",
+    show_zero: false,
+    show_untracked: true,
+  };
+  card._hass.connection = {
+    _energy_1: {
+      start: new Date("2025-01-01T00:00:00Z"),
+      end: new Date("2025-01-02T00:00:00Z"),
+      prefs: {
+        energy_sources: [
+          { type: "home", stat_energy_to: "sensor.home_consumption" },
+          {
+            type: "grid",
+            stat_energy_from: "sensor.grid_import",
+            stat_energy_to: null,
+          },
+        ],
+      },
+      stats: {
+        "sensor.home_consumption": [{ change: 20 }],
+        "sensor.grid_import": [{ change: 10 }],
+      },
+      subscribe: () => () => {},
+    },
+  };
+
+  card._setupEnergyCollection();
+
+  assert.equal(card._houseTotalKWh, 20);
+  assert.equal(card._applyShares()[1].untracked, true);
+});
+
+test("renders a ring per row instead of the icon and the bar", () => {
+  const card = createCard();
+  card._config.show_untracked = true;
+  card._houseTotalKWh = 8;
+  card._rows = [];
+  card._items = [
+    { entity: "sensor.energy", consumptionKWh: 6, consumption: 6, displayUnit: "kWh", cost: null },
+  ];
+  card._loading = false;
+
+  card._render();
+
+  const html = card.shadowRoot.innerHTML;
+  assert.match(html, /<svg class="ring"/);
+  assert.match(html, /class="ring-segment ring-current"/);
+  assert.match(html, /class="ring-segment ring-untracked"/);
+  assert.match(html, /Not captured consumption/);
+  assert.doesNotMatch(html, /ha-icon icon="mdi:flash"/);
+  assert.doesNotMatch(html, /bar-track/);
+});
+
 test("provides a visual editor without locale configuration fields", () => {
   const form = Card.getConfigForm();
   const fields = flattenSchema(form.schema).map((field) => field.name);

@@ -172,10 +172,12 @@ function normalizeConfig(config) {
     debug: config.debug === true,
     display_unit: displayUnit,
     show_zero: !configValueIsFalse(config.show_zero),
+    show_untracked: !configValueIsFalse(config.show_untracked),
   };
   delete normalized.entity;
   delete normalized.entities;
   delete normalized.include_all_energy;
+  delete normalized.icon;
   return normalized;
 }
 
@@ -411,6 +413,112 @@ function getCurrentPrice(hass, priceEntity) {
   return Number.isFinite(price) ? price : null;
 }
 
+function sumStatisticChanges(stats) {
+  if (!Array.isArray(stats)) return 0;
+
+  return stats.reduce((sum, stat) => {
+    const change = Number(stat?.change);
+    return Number.isFinite(change) ? sum + change : sum;
+  }, 0);
+}
+
+/**
+ * Total energy the household used during the selected period, in kWh, the same
+ * way the Energy dashboard itself derives it: the configured home meter when
+ * there is one, otherwise the grid import plus solar and battery discharge that
+ * stayed in the house. Returns null when the collection carries no such
+ * sources, which leaves the card without a house total.
+ */
+function computeCollectionHouseConsumptionKWh(data) {
+  const sources = data?.prefs?.energy_sources;
+  if (!Array.isArray(sources) || !data.stats) return null;
+
+  const homeStats = sources
+    .filter((source) => source?.type === "home")
+    .map((source) => source.stat_energy_to);
+
+  if (homeStats.length) {
+    const home = homeStats.reduce(
+      (sum, statId) => sum + sumStatisticChanges(data.stats[statId]),
+      0
+    );
+    return home > 0 ? home : null;
+  }
+
+  let fromGrid = 0;
+  let toGrid = 0;
+  let solar = 0;
+  let batteryCharge = 0;
+  let batteryDischarge = 0;
+
+  for (const source of sources) {
+    if (source?.type === "grid") {
+      fromGrid += sumStatisticChanges(data.stats[source.stat_energy_from]);
+      toGrid += sumStatisticChanges(data.stats[source.stat_energy_to]);
+      continue;
+    }
+
+    if (source?.type === "solar") {
+      solar += sumStatisticChanges(data.stats[source.stat_energy_from]);
+      continue;
+    }
+
+    if (source?.type === "battery") {
+      // A battery is metered either by direction or by totals, never both.
+      const chargeStats = [
+        source.stat_energy_to,
+        source.stat_energy_from_grid,
+        source.stat_energy_from_solar,
+      ];
+      const dischargeStats = [
+        source.stat_energy_from,
+        source.stat_energy_to_home,
+      ];
+      batteryCharge += chargeStats.reduce(
+        (sum, statId) => sum + sumStatisticChanges(data.stats[statId]),
+        0
+      );
+      batteryDischarge += dischargeStats.reduce(
+        (sum, statId) => sum + sumStatisticChanges(data.stats[statId]),
+        0
+      );
+      continue;
+    }
+  }
+
+  if (!fromGrid && !solar && !batteryDischarge) return null;
+
+  const total = fromGrid + solar + batteryDischarge - toGrid - batteryCharge;
+  return total > 0 ? total : null;
+}
+
+/** Point on a circle, measured from the top and turning clockwise. */
+function polarPoint(cx, cy, radius, degrees) {
+  const radians = ((degrees - 90) * Math.PI) / 180;
+  return [
+    (cx + radius * Math.cos(radians)).toFixed(2),
+    (cy + radius * Math.sin(radians)).toFixed(2),
+  ];
+}
+
+/**
+ * Arc of a donut ring between two percentages. Each tile ring starts where the
+ * previous one ended, so the rings of the list fill one shared circle.
+ */
+function describeDonutArc(cx, cy, radius, startPercent, endPercent) {
+  const start = Math.max(0, Math.min(100, startPercent));
+  const end = Math.max(start, Math.min(100, endPercent));
+  if (end - start < 0.1) return "";
+
+  const sweep = Math.min(end - start, 100 - 0.05);
+  const from = polarPoint(cx, cy, radius, (start / 100) * 360);
+  const to = polarPoint(cx, cy, radius, ((start + sweep) / 100) * 360);
+
+  return `M ${from[0]} ${from[1]} A ${radius} ${radius} 0 ${
+    sweep > 50 ? 1 : 0
+  } 1 ${to[0]} ${to[1]}`;
+}
+
 class HaEnergyTileCard extends HTMLElement {
   constructor() {
     super();
@@ -419,12 +527,14 @@ class HaEnergyTileCard extends HTMLElement {
     this._hass = undefined;
     this._config = undefined;
     this._items = [];
+    this._rows = [];
     this._warnings = [];
     this._error = null;
     this._loading = true;
 
     this._collectionStart = undefined;
     this._collectionEnd = undefined;
+    this._houseTotalKWh = null;
     this._collectionUnsubscribe = undefined;
     this._collectionRetryTimer = undefined;
     this._collectionRetryCount = 0;
@@ -468,9 +578,11 @@ class HaEnergyTileCard extends HTMLElement {
     assertConfig(config);
     this._config = normalizeConfig(config);
     this._items = [];
+    this._rows = [];
     this._warnings = [];
     this._error = null;
     this._loading = true;
+    this._houseTotalKWh = null;
     this._lastFetchKey = "";
 
     this._setupEnergyCollection();
@@ -668,6 +780,13 @@ class HaEnergyTileCard extends HTMLElement {
       const end = data?.end || collection.end || new Date();
       if (!start || !end) return;
 
+      const houseTotalKWh = computeCollectionHouseConsumptionKWh(data);
+      if (houseTotalKWh !== this._houseTotalKWh) {
+        this._houseTotalKWh = houseTotalKWh;
+        this._applyShares();
+        this._render();
+      }
+
       const startDate = new Date(start);
       const endDate = new Date(end);
 
@@ -768,10 +887,11 @@ class HaEnergyTileCard extends HTMLElement {
 
       if (fetchKey !== this._lastFetchKey) return;
 
-      this._items = this._buildItems(validEntities, stats);
+      this._buildItems(validEntities, stats);
     } catch (error) {
       this._error = error instanceof Error ? error.message : "Unknown error";
       this._items = [];
+      this._rows = [];
       console.error("[ha_energy-tile-card]", error);
     } finally {
       this._fetchInFlight = false;
@@ -860,29 +980,74 @@ class HaEnergyTileCard extends HTMLElement {
       items = items.filter((item) => hasPositiveConsumption(item.consumptionKWh));
     }
 
-    const totalKWh = items.reduce((sum, item) => sum + item.consumptionKWh, 0);
-
-    for (const item of items) {
-      item.percentage =
-        totalKWh > 0
-          ? Math.max(0, Math.min(100, (item.consumptionKWh / totalKWh) * 100))
-          : null;
-    }
-
-    return items.sort((a, b) => b.consumptionKWh - a.consumptionKWh);
+    this._items = items.sort((a, b) => b.consumptionKWh - a.consumptionKWh);
+    return this._applyShares();
   }
 
-  _getIcon(entityId) {
-    const stateObj = this.hass.states?.[entityId];
-    const entity = this.hass.entities?.[entityId];
-
-    return (
-      this._config.icon ||
-      entity?.icon ||
-      stateObj?.attributes?.icon ||
-      entity?.original_icon ||
-      "mdi:flash"
+  /**
+   * Every share is taken against the whole house, not against the list, and
+   * each ring starts where the previous one ended, so the rings of all rows
+   * build one circle. The house total comes from the Energy collection that
+   * also defines the period; what its sources do not account for becomes a
+   * single "not captured" row. Without a house total the circle can only be
+   * the list itself, and the extra row would always be empty.
+   */
+  _applyShares() {
+    const listTotalKWh = this._items.reduce(
+      (sum, item) => sum + Math.max(0, item.consumptionKWh),
+      0
     );
+    const houseTotalKWh =
+      Number.isFinite(this._houseTotalKWh) && this._houseTotalKWh > 0
+        ? this._houseTotalKWh
+        : null;
+    const baseKWh =
+      houseTotalKWh === null
+        ? listTotalKWh
+        : Math.max(houseTotalKWh, listTotalKWh);
+
+    let cursor = 0;
+    for (const item of this._items) {
+      const share =
+        baseKWh > 0
+          ? Math.max(0, Math.min(100, (item.consumptionKWh / baseKWh) * 100))
+          : null;
+
+      item.percentage = share;
+      item.arcStart = share === null ? null : cursor;
+      cursor += share || 0;
+      item.arcEnd = share === null ? null : cursor;
+    }
+
+    const rows = [...this._items];
+    const untrackedKWh =
+      houseTotalKWh === null ? 0 : Math.max(0, baseKWh - listTotalKWh);
+
+    if (
+      this._config?.show_untracked &&
+      untrackedKWh > ZERO_CONSUMPTION_EPSILON_KWH
+    ) {
+      const currentPrice = getCurrentPrice(this.hass, this._config.price_entity);
+
+      rows.push({
+        entity: null,
+        untracked: true,
+        consumptionKWh: untrackedKWh,
+        consumption: convertEnergy(
+          untrackedKWh,
+          "kWh",
+          this._config.display_unit
+        ),
+        displayUnit: this._config.display_unit,
+        cost: currentPrice === null ? null : untrackedKWh * currentPrice,
+        percentage: 100 - cursor,
+        arcStart: cursor,
+        arcEnd: 100,
+      });
+    }
+
+    this._rows = rows;
+    return rows;
   }
 
   _formatCost(value, currency, locale, numberFormatOptions) {
@@ -948,6 +1113,9 @@ class HaEnergyTileCard extends HTMLElement {
         : "Not subscribed";
     const rangeStart = formatDebugDateTime(this.hass, this._collectionStart);
     const rangeEnd = formatDebugDateTime(this.hass, this._collectionEnd);
+    const houseTotal = Number.isFinite(this._houseTotalKWh)
+      ? `${this._houseTotalKWh.toFixed(2)} kWh`
+      : "Not available — shares are taken against the listed sensors";
 
     return `
       <ha-card class="debug-card">
@@ -958,6 +1126,8 @@ class HaEnergyTileCard extends HTMLElement {
           <span>${escapeHtml(rangeStart)}</span>
           <span class="debug-label">To</span>
           <span>${escapeHtml(rangeEnd)}</span>
+          <span class="debug-label">House total</span>
+          <span>${escapeHtml(houseTotal)}</span>
           <span class="debug-label">Subscription</span>
           <span>${escapeHtml(subscriptionStatus)}</span>
           <span class="debug-label">Last event</span>
@@ -969,18 +1139,72 @@ class HaEnergyTileCard extends HTMLElement {
     `;
   }
 
-  _renderEntityTile(item, locale, currency, numberFormatOptions) {
+  _formatShare(percentage, locale, numberFormatOptions) {
+    if (percentage === null || percentage === undefined) return "";
+
+    try {
+      return new Intl.NumberFormat(locale, {
+        ...numberFormatOptions,
+        style: "percent",
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 1,
+      }).format(percentage / 100);
+    } catch (_) {
+      return `${percentage.toFixed(0)} %`;
+    }
+  }
+
+  _renderRing(item, index) {
+    const size = 34;
+    const stroke = 9;
+    const center = size / 2;
+    const radius = (size - stroke) / 2;
+    const share = item.percentage === null ? null : Math.round(item.percentage);
+    const base =
+      Number.isFinite(this._houseTotalKWh) && this._houseTotalKWh > 0
+        ? "the house consumption"
+        : "the listed sensors";
+
+    let svg = `<svg class="ring" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="${escapeHtml(
+      share === null ? "No share" : `${share}% of ${base}`
+    )}">`;
+    svg += `<circle class="ring-track" cx="${center}" cy="${center}" r="${radius}" stroke-width="${stroke}" fill="none"></circle>`;
+
+    this._rows.forEach((row, rowIndex) => {
+      const path = describeDonutArc(
+        center,
+        center,
+        radius,
+        row.arcStart ?? 0,
+        row.arcEnd ?? 0
+      );
+      if (!path) return;
+
+      const role = row.untracked
+        ? "ring-untracked"
+        : rowIndex === index
+          ? "ring-current"
+          : "ring-past";
+      svg += `<path class="ring-segment ${role}" d="${path}" fill="none" stroke-width="${stroke}"></path>`;
+    });
+
+    return `${svg}</svg>`;
+  }
+
+  _renderEntityTile(item, index, locale, currency, numberFormatOptions) {
     const entityId = item.entity;
-    const icon = this._getIcon(entityId);
-    const name = buildName(this.hass, entityId, this._config.name);
-    const secondary = buildStateContent(
-      this.hass,
-      entityId,
-      this._config.state_content,
-      locale,
-      numberFormatOptions
-    );
-    const percentage = item.percentage ?? 0;
+    const name = item.untracked
+      ? this._config.untracked_name || "Not captured consumption"
+      : buildName(this.hass, entityId, this._config.name);
+    const secondary = item.untracked
+      ? this._formatShare(item.percentage, locale, numberFormatOptions)
+      : buildStateContent(
+          this.hass,
+          entityId,
+          this._config.state_content,
+          locale,
+          numberFormatOptions
+        );
 
     const cost =
       item.cost !== null && item.cost !== undefined
@@ -993,33 +1217,34 @@ class HaEnergyTileCard extends HTMLElement {
       locale,
       numberFormatOptions
     );
-    const clickableClass = (this._config?.tap_action?.action ?? "more-info") === "none" ? "" : " clickable";
+    const clickable =
+      !item.untracked &&
+      (this._config?.tap_action?.action ?? "more-info") !== "none";
 
     return `
-      <ha-card class="entity-card${clickableClass}" data-entity="${escapeHtml(entityId)}">
+      <ha-card class="entity-card${clickable ? " clickable" : ""}${
+        item.untracked ? " untracked" : ""
+      }"${item.untracked ? "" : ` data-entity="${escapeHtml(entityId)}"`}>
         <div class="container entity-row">
-          <div class="header">
-            <div class="icon-wrapper">
-              <ha-icon icon="${escapeHtml(icon)}"></ha-icon>
-            </div>
+          <div class="ring-wrapper">${this._renderRing(item, index)}</div>
 
-            <div class="info">
-              <div class="name" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
-              ${secondary ? `<div class="secondary" title="${escapeHtml(secondary)}">${escapeHtml(secondary)}</div>` : ""}
-            </div>
-
-            <div class="cost">${escapeHtml(cost)}</div>
+          <div class="info">
+            <div class="name" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
+            ${secondary ? `<div class="secondary" title="${escapeHtml(secondary)}">${escapeHtml(secondary)}</div>` : ""}
           </div>
 
-          <div class="bar-row">
-            <div class="bar-track">
-              <div class="bar-fill" style="width: ${Math.max(0, Math.min(100, percentage))}%"></div>
-            </div>
+          <div class="values">
             <div class="consumption">${escapeHtml(consumption)}</div>
+            ${cost ? `<div class="cost">${escapeHtml(cost)}</div>` : ""}
           </div>
         </div>
       </ha-card>
     `;
+  }
+
+  _getRows() {
+    if (this._rows.length === 0 && this._items.length > 0) this._applyShares();
+    return this._rows;
   }
 
   _render() {
@@ -1050,16 +1275,18 @@ class HaEnergyTileCard extends HTMLElement {
     const locale = getNumberLocale(this.hass);
     const numberFormatOptions = getNumberFormatOptions(this.hass);
     const currency = getCurrency(this.hass, this._config.currency);
+    const rows = this._getRows();
 
     const content =
-      this._loading && this._items.length === 0
+      this._loading && rows.length === 0
         ? `<div class="loading">…</div>`
-        : this._items.length === 0
+        : rows.length === 0
           ? `<div class="loading">No values</div>`
-          : this._items
-              .map((item) =>
+          : rows
+              .map((item, index) =>
                 this._renderEntityTile(
                   item,
+                  index,
                   locale,
                   currency,
                   numberFormatOptions
@@ -1081,7 +1308,8 @@ class HaEnergyTileCard extends HTMLElement {
   _styles() {
     return `
       :host {
-        --etc-consumption-color: var(--energy-consumption-color, var(--primary-text-color, black));
+        --etc-consumption-color: var(--energy-consumption-color, var(--primary-color, var(--primary-text-color, black)));
+        --etc-ring-untracked-color: var(--secondary-text-color, rgba(127, 127, 127, 0.6));
       }
 
       .list-container {
@@ -1135,24 +1363,39 @@ class HaEnergyTileCard extends HTMLElement {
       }
 
       .entity-row {
-        padding: 12px 14px;
-      }
-
-      .header {
         display: flex;
+        flex-direction: row;
         align-items: center;
         gap: 12px;
+        padding: 10px 14px;
       }
 
-      .icon-wrapper {
+      .ring-wrapper {
         display: flex;
         align-items: center;
         justify-content: center;
         flex-shrink: 0;
       }
 
-      .icon-wrapper ha-icon {
-        --mdc-icon-size: 24px;
+      .ring {
+        display: block;
+      }
+
+      .ring-track {
+        stroke: var(--divider-color, rgba(127, 127, 127, 0.2));
+      }
+
+      .ring-segment {
+        stroke: var(--etc-consumption-color);
+      }
+
+      .ring-segment.ring-past {
+        opacity: 0.25;
+      }
+
+      .ring-segment.ring-untracked {
+        stroke: var(--etc-ring-untracked-color);
+        opacity: 0.5;
       }
 
       .info {
@@ -1173,6 +1416,11 @@ class HaEnergyTileCard extends HTMLElement {
         text-overflow: ellipsis;
       }
 
+      .entity-card.untracked .name {
+        color: var(--secondary-text-color);
+        font-weight: var(--ha-font-weight-regular);
+      }
+
       .secondary {
         font-size: var(--ha-font-size-s);
         line-height: 1.3;
@@ -1182,42 +1430,26 @@ class HaEnergyTileCard extends HTMLElement {
         text-overflow: ellipsis;
       }
 
+      .values {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 1px;
+        flex-shrink: 0;
+      }
+
       .cost {
+        font-size: var(--ha-font-size-s);
+        color: var(--secondary-text-color);
+        white-space: nowrap;
+      }
+
+      .consumption {
         font-weight: var(--ha-font-weight-medium);
         font-size: var(--ha-font-size-m);
         color: var(--primary-text-color);
         white-space: nowrap;
-        flex-shrink: 0;
-      }
-
-      .bar-row {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }
-
-      .bar-track {
-        flex: 1;
-        height: 8px;
-        border-radius: 999px;
-        background: var(--divider-color, rgba(127, 127, 127, 0.2));
-        overflow: hidden;
-      }
-
-      .bar-fill {
-        height: 100%;
-        background: var(--etc-consumption-color);
-        border-radius: 999px;
-        transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-      }
-
-      .consumption {
-        font-size: var(--ha-font-size-s);
-        color: var(--secondary-text-color);
-        white-space: nowrap;
-        flex-shrink: 0;
-        min-width: 60px;
-        text-align: right;
+        font-variant-numeric: tabular-nums;
       }
 
       .loading {
@@ -1251,7 +1483,8 @@ class HaEnergyTileCard extends HTMLElement {
   }
 
   getCardSize() {
-    return Math.max(1, this._items.length || this._resolvedEntities.length || 1);
+    const rows = Math.max(this._items.length, this._rows.length);
+    return Math.max(1, rows || this._resolvedEntities.length || 1);
   }
 
   static getConfigForm() {
@@ -1286,10 +1519,6 @@ class HaEnergyTileCard extends HTMLElement {
                   },
                 },
               },
-            },
-            {
-              name: "icon",
-              selector: { icon: {} },
             },
             {
               name: "tap_action",
@@ -1360,6 +1589,14 @@ class HaEnergyTileCard extends HTMLElement {
               name: "show_zero",
               selector: { boolean: {} },
             },
+            {
+              name: "show_untracked",
+              selector: { boolean: {} },
+            },
+            {
+              name: "untracked_name",
+              selector: { text: {} },
+            },
           ],
         },
       ],
@@ -1373,7 +1610,8 @@ class HaEnergyTileCard extends HTMLElement {
           price_entity: "Current price",
           display_unit: "Display unit",
           show_zero: "Show zero values",
-          icon: "Icon",
+          show_untracked: "Show not captured consumption",
+          untracked_name: "Name of the not captured row",
           name: "Name",
           state_content: "State content",
           tap_action: "Behavior on tap",
@@ -1389,6 +1627,8 @@ class HaEnergyTileCard extends HTMLElement {
             "Selected energy sensors are excluded from the card.",
           price_entity:
             "Only sensors with a supported unit ending in /kWh are shown.",
+          show_untracked:
+            "Adds one row for the part of the house consumption no listed sensor covers.",
         })[schema.name],
       assertConfig,
     };
@@ -1400,6 +1640,7 @@ class HaEnergyTileCard extends HTMLElement {
       collection_key: "energy_1",
       display_unit: "kWh",
       show_zero: false,
+      show_untracked: true,
       tap_action: {
         action: "more-info",
       },
@@ -1416,12 +1657,12 @@ window.customCards.push({
   type: "ha_energy-tile-card",
   name: "Energy Tile Card",
   description:
-    "Tile card with consumption, cost, percentage bars, show_zero, and tap_action per entity. Uses recorder-calculated period totals.",
+    "Tile card with consumption, cost, and a consumption ring that shows each device's share of the whole house, including a row for what is not captured. Uses recorder-calculated period totals.",
   preview: true,
 });
 
 console.info(
-  "%c HA_ENERGY-TILE-CARD %c v2.2.0 ",
+  "%c HA_ENERGY-TILE-CARD %c v2.3.0-beta.1 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );
