@@ -1,6 +1,7 @@
 # Repository instructions
 
 - Use English for all source code, identifiers, comments, user-facing strings, error messages, documentation, examples, release notes, and commit messages.
+- The only non-English text allowed is a label that follows the language Home Assistant reports for the user. Those labels live in the translation table next to `getUserLanguage`, whose default is English, and a test is what shows a translation is read. Everywhere else, including the fallback a label uses when no language matches, English only.
 - Keep `README.md` entirely in English.
 - Never introduce German text into code or documentation.
 - Keep the card dependency-free and edit `ha_energy-tile-card.js` directly; do not add a build step unless the project requirements materially change.

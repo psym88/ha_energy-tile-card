@@ -13,7 +13,7 @@ A Home Assistant dashboard card for energy consumption, costs, and percentage-ba
 - Narrows the visual price-entity picker to monetary sensors and validates `/kWh` units
 - Displays consumption and optional costs next to a ring that shows the share of the whole house consumption
 - Draws each ring where the previous one ended, so the rings together form the circle of the house consumption
-- Adds one row for the part of the house consumption that no listed sensor covers
+- Adds one row for the part of the house consumption that no listed sensor covers, named in the language of the Home Assistant user
 - Supports `Wh`, `kWh`, and `MWh`
 - Opens the entity's more-info dialog when selected
 
@@ -92,7 +92,7 @@ untracked_name: Not captured consumption
 | `display_unit` | No | `kWh` | `Wh`, `kWh`, or `MWh` |
 | `show_zero` | No | `true` | Whether to include sensors without consumption |
 | `show_untracked` | No | `true` | Adds a row for the part of the house consumption no listed sensor covers |
-| `untracked_name` | No | `Not captured consumption` | Name of that row |
+| `untracked_name` | No | Label of the user's language | Name of that row, English where the language is not translated |
 | `name` | No | `entity` | Name parts: `entity`, `device`, `area`, `floor` |
 | `state_content` | No | `state` | Secondary content: `state`, `device_name`, `area_name`, `floor_name` |
 | `tap_action.action` | No | `more-info` | `more-info` or `none` |
@@ -101,7 +101,7 @@ untracked_name: Not captured consumption
 
 Every row carries a ring instead of an icon. A ring is a slice of one shared circle: the whole circle is the house consumption of the selected period, a slice is as wide as the device is large, and each slice starts where the previous one ended. The card reads the house consumption from the Energy collection named by `collection_key`, the same source the Energy dashboard uses: the configured home meter if there is one, otherwise the grid import plus solar and battery discharge that stayed in the house.
 
-What the listed sensors do not account for is shown as one additional row, `Not captured consumption`, so the circle is always complete. Set `show_untracked: false` to leave it out. When the dashboard has no consumption sources for the period, the card can only measure against the listed sensors: the rings then show the share within the list and the extra row stays away.
+What the listed sensors do not account for is shown as one additional row, `Not captured consumption`, so the circle is always complete. That row is a row like any other: it sits among the others where its size puts it. Its name follows the language of the Home Assistant user, English where that language is not translated, and `untracked_name` replaces it in any language. Set `show_untracked: false` to leave the row out. When the dashboard has no consumption sources for the period, the card can only measure against the listed sensors: the rings then show the share within the list and the extra row stays away.
 
 ## Home Assistant settings
 

@@ -191,6 +191,24 @@ function getUserLanguage(hass) {
   );
 }
 
+/**
+ * The name of the row that carries what no listed sensor covers. Home Assistant
+ * knows the language the user chose, so the row arrives in that language and
+ * every language without an entry here reads English.
+ */
+const UNTRACKED_NAMES = {
+  de: "Nicht erfasster Verbrauch",
+  en: "Not captured consumption",
+};
+
+function getDefaultUntrackedName(hass) {
+  const language = String(getUserLanguage(hass) || "en")
+    .split("-")[0]
+    .toLowerCase();
+
+  return UNTRACKED_NAMES[language] || UNTRACKED_NAMES.en;
+}
+
 function getNumberLocale(hass) {
   const numberFormat = hass?.locale?.number_format;
   if (numberFormat === "comma_decimal") return "en-US";
@@ -989,8 +1007,9 @@ class HaEnergyTileCard extends HTMLElement {
    * each ring starts where the previous one ended, so the rings of all rows
    * build one circle. The house total comes from the Energy collection that
    * also defines the period; what its sources do not account for becomes a
-   * single "not captured" row. Without a house total the circle can only be
-   * the list itself, and the extra row would always be empty.
+   * single row that takes its place among the others by its size. Without a
+   * house total the circle can only be the list itself, and the extra row
+   * would always be empty.
    */
   _applyShares() {
     const listTotalKWh = this._items.reduce(
@@ -1005,19 +1024,6 @@ class HaEnergyTileCard extends HTMLElement {
       houseTotalKWh === null
         ? listTotalKWh
         : Math.max(houseTotalKWh, listTotalKWh);
-
-    let cursor = 0;
-    for (const item of this._items) {
-      const share =
-        baseKWh > 0
-          ? Math.max(0, Math.min(100, (item.consumptionKWh / baseKWh) * 100))
-          : null;
-
-      item.percentage = share;
-      item.arcStart = share === null ? null : cursor;
-      cursor += share || 0;
-      item.arcEnd = share === null ? null : cursor;
-    }
 
     const rows = [...this._items];
     const untrackedKWh =
@@ -1040,10 +1046,32 @@ class HaEnergyTileCard extends HTMLElement {
         ),
         displayUnit: this._config.display_unit,
         cost: currentPrice === null ? null : untrackedKWh * currentPrice,
-        percentage: 100 - cursor,
-        arcStart: cursor,
-        arcEnd: 100,
+        percentage: null,
       });
+    }
+
+    // The rows are ordered by size before the circle is divided, so the extra
+    // row sits where its consumption puts it and the arcs keep following the
+    // order the card shows.
+    rows.sort((a, b) => b.consumptionKWh - a.consumptionKWh);
+
+    let cursor = 0;
+    for (const row of rows) {
+      const share =
+        baseKWh > 0
+          ? Math.max(0, Math.min(100, (row.consumptionKWh / baseKWh) * 100))
+          : null;
+
+      row.percentage = share;
+      row.arcStart = share === null ? null : cursor;
+      cursor += share || 0;
+      row.arcEnd = share === null ? null : cursor;
+    }
+
+    // What the row of the missing part leaves open is rounding, and only that:
+    // a circle that stays open because its row was switched off stays open.
+    if (rows.length > this._items.length && 100 - cursor < 1e-6) {
+      rows[rows.length - 1].arcEnd = 100;
     }
 
     this._rows = rows;
@@ -1194,7 +1222,7 @@ class HaEnergyTileCard extends HTMLElement {
   _renderEntityTile(item, index, locale, currency, numberFormatOptions) {
     const entityId = item.entity;
     const name = item.untracked
-      ? this._config.untracked_name || "Not captured consumption"
+      ? this._config.untracked_name || getDefaultUntrackedName(this.hass)
       : buildName(this.hass, entityId, this._config.name);
     const secondary = item.untracked
       ? this._formatShare(item.percentage, locale, numberFormatOptions)
@@ -1662,7 +1690,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c HA_ENERGY-TILE-CARD %c v2.3.0-beta.1 ",
+  "%c HA_ENERGY-TILE-CARD %c v2.3.0-beta.2 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );
