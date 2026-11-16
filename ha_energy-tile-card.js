@@ -1397,7 +1397,12 @@ class HaEnergyTileCard extends HTMLElement {
         opacity: var(--ha-ripple-pressed-opacity, 0.12);
       }
 
+      /* A tile keeps its icon and its words above ha-ripple by making them the
+         later box, and here the wash is the last box of the row, so the content
+         needs the higher layer: a layer over the words would dim them. */
       .container {
+        position: relative;
+        z-index: 1;
         display: flex;
         flex-direction: column;
         gap: 12px;
@@ -1703,7 +1708,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c HA_ENERGY-TILE-CARD %c v2.3.0-beta.7 ",
+  "%c HA_ENERGY-TILE-CARD %c v2.3.0-beta.8 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );

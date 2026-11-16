@@ -297,6 +297,7 @@ test("washes a row on hover the way a Home Assistant tile does", () => {
     html,
     /\.entity-card\.clickable:active::after\s*\{\s*background: var\(\s*--ha-ripple-pressed-color,/
   );
+  assert.match(html, /\.container\s*\{\s*position: relative;\s*z-index: 1;/);
   assert.doesNotMatch(html, /box-shadow/);
 
   card._config.tap_action = { action: "none" };
