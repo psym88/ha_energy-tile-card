@@ -282,18 +282,22 @@ test("names the missing part in the language of the user", () => {
   assert.match(named.shadowRoot.innerHTML, />Rest</);
 });
 
-test("raises a row on hover only while it can be opened", () => {
+test("washes a row on hover the way a Home Assistant tile does", () => {
   const card = createCard();
   card._config.tap_action = { action: "more-info" };
   card._render();
 
-  const clickable = card.shadowRoot.innerHTML;
-  assert.match(clickable, /class="entity-card clickable/);
+  const html = card.shadowRoot.innerHTML;
+  assert.match(html, /class="entity-card clickable/);
   assert.match(
-    clickable,
-    /\.entity-card\.clickable:hover\s*\{[^}]*box-shadow: var\(--etc-card-hover-shadow\)/
+    html,
+    /\.entity-card\.clickable:hover::after\s*\{\s*opacity: var\(--ha-ripple-hover-opacity, 0\.04\);/
   );
-  assert.match(clickable, /--etc-card-hover-shadow: var\(--ha-card-box-shadow,/);
+  assert.match(
+    html,
+    /\.entity-card\.clickable:active::after\s*\{\s*background: var\(\s*--ha-ripple-pressed-color,/
+  );
+  assert.doesNotMatch(html, /box-shadow/);
 
   card._config.tap_action = { action: "none" };
   card._render();

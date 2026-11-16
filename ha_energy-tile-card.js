@@ -1324,7 +1324,6 @@ class HaEnergyTileCard extends HTMLElement {
       :host {
         --etc-consumption-color: var(--energy-consumption-color, var(--primary-color, var(--primary-text-color, black)));
         --etc-ring-untracked-color: var(--secondary-text-color, rgba(127, 127, 127, 0.6));
-        --etc-card-hover-shadow: var(--ha-card-box-shadow, 0px 2px 1px -1px rgba(0, 0, 0, 0.2), 0px 1px 1px 0px rgba(0, 0, 0, 0.14), 0px 1px 3px 0px rgba(0, 0, 0, 0.12));
       }
 
       .list-container {
@@ -1336,7 +1335,7 @@ class HaEnergyTileCard extends HTMLElement {
       .entity-card {
         display: block;
         overflow: hidden;
-        transition: box-shadow 0.3s ease-out, border-color 0.3s ease-out;
+        position: relative;
       }
 
       .debug-card {
@@ -1368,16 +1367,34 @@ class HaEnergyTileCard extends HTMLElement {
         cursor: pointer;
       }
 
-      /* The elevation of a raised ha-card, so a row reads as the card it is.
-         The border goes transparent instead of away: a border that is gone
-         would move the row's content by the width of that border. */
-      .entity-card.clickable:hover {
-        box-shadow: var(--etc-card-hover-shadow);
-        border-color: transparent;
+      /* The feedback of a Home Assistant tile, which is ha-ripple's layer over
+         the card rather than an elevation: the tile colour at four percent
+         while the pointer is on it and twelve while it is pressed, in fifteen
+         milliseconds, so nothing about the row moves. The variables are the
+         ones ha-ripple reads, so a theme that sets them sets this too. */
+      .entity-card.clickable::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: var(
+          --ha-ripple-hover-color,
+          var(--ha-ripple-color, var(--etc-consumption-color))
+        );
+        opacity: 0;
+        transition: opacity var(--ha-ripple-hover-duration, 15ms) linear;
       }
 
-      .entity-card.clickable:active {
-        opacity: 0.96;
+      .entity-card.clickable:hover::after {
+        opacity: var(--ha-ripple-hover-opacity, 0.04);
+      }
+
+      .entity-card.clickable:active::after {
+        background: var(
+          --ha-ripple-pressed-color,
+          var(--ha-ripple-color, var(--etc-consumption-color))
+        );
+        opacity: var(--ha-ripple-pressed-opacity, 0.12);
       }
 
       .container {
@@ -1686,7 +1703,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c HA_ENERGY-TILE-CARD %c v2.3.0-beta.6 ",
+  "%c HA_ENERGY-TILE-CARD %c v2.3.0-beta.7 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );

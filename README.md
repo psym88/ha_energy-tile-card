@@ -15,7 +15,7 @@ A Home Assistant dashboard card for energy consumption, costs, and percentage-ba
 - Draws each ring where the previous one ended, so the rings together form the circle of the house consumption
 - Adds one row for the part of the house consumption that no listed sensor covers, named in the language of the Home Assistant user
 - Supports `Wh`, `kWh`, and `MWh`
-- Raises a row on hover and opens its more-info dialog when selected
+- Washes a row on hover the way a Home Assistant tile does and opens its more-info dialog when selected
 
 ## Requirements
 
@@ -95,7 +95,7 @@ untracked_name: Not captured consumption
 | `untracked_name` | No | Label of the user's language | Name of that row, English where the language is not translated |
 | `name` | No | `entity` | Name parts: `entity`, `device`, `area`, `floor` |
 | `state_content` | No | `state` | Secondary content: `state`, `device_name`, `area_name`, `floor_name` |
-| `tap_action.action` | No | `more-info` | `more-info` or `none`; only a row that can be opened carries the hover elevation |
+| `tap_action.action` | No | `more-info` | `more-info` or `none`; only a row that can be opened carries the hover wash |
 
 ## Consumption rings
 
