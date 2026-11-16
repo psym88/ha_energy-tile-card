@@ -282,6 +282,25 @@ test("names the missing part in the language of the user", () => {
   assert.match(named.shadowRoot.innerHTML, />Rest</);
 });
 
+test("raises a row on hover only while it can be opened", () => {
+  const card = createCard();
+  card._config.tap_action = { action: "more-info" };
+  card._render();
+
+  const clickable = card.shadowRoot.innerHTML;
+  assert.match(clickable, /class="entity-card clickable/);
+  assert.match(
+    clickable,
+    /\.entity-card\.clickable:hover\s*\{[^}]*box-shadow: var\(--etc-card-hover-shadow\)/
+  );
+  assert.match(clickable, /--etc-card-hover-shadow: var\(--ha-card-box-shadow,/);
+
+  card._config.tap_action = { action: "none" };
+  card._render();
+
+  assert.doesNotMatch(card.shadowRoot.innerHTML, /class="entity-card clickable/);
+});
+
 test("provides a visual editor without locale configuration fields", () => {
   const form = Card.getConfigForm();
   const fields = flattenSchema(form.schema).map((field) => field.name);

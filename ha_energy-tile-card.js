@@ -1324,6 +1324,7 @@ class HaEnergyTileCard extends HTMLElement {
       :host {
         --etc-consumption-color: var(--energy-consumption-color, var(--primary-color, var(--primary-text-color, black)));
         --etc-ring-untracked-color: var(--secondary-text-color, rgba(127, 127, 127, 0.6));
+        --etc-card-hover-shadow: var(--ha-card-box-shadow, 0px 2px 1px -1px rgba(0, 0, 0, 0.2), 0px 1px 1px 0px rgba(0, 0, 0, 0.14), 0px 1px 3px 0px rgba(0, 0, 0, 0.12));
       }
 
       .list-container {
@@ -1335,6 +1336,7 @@ class HaEnergyTileCard extends HTMLElement {
       .entity-card {
         display: block;
         overflow: hidden;
+        transition: box-shadow 0.3s ease-out, border-color 0.3s ease-out;
       }
 
       .debug-card {
@@ -1364,6 +1366,14 @@ class HaEnergyTileCard extends HTMLElement {
 
       .entity-card.clickable {
         cursor: pointer;
+      }
+
+      /* The elevation of a raised ha-card, so a row reads as the card it is.
+         The border goes transparent instead of away: a border that is gone
+         would move the row's content by the width of that border. */
+      .entity-card.clickable:hover {
+        box-shadow: var(--etc-card-hover-shadow);
+        border-color: transparent;
       }
 
       .entity-card.clickable:active {
@@ -1676,7 +1686,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c HA_ENERGY-TILE-CARD %c v2.3.0-beta.5 ",
+  "%c HA_ENERGY-TILE-CARD %c v2.3.0-beta.6 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );
