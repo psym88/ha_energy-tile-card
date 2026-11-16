@@ -148,7 +148,7 @@ test("hides the missing part when it is switched off", () => {
 });
 
 test("reads the house total of the period from the energy collection", () => {
-  const card = createCard({ callWS: async () => ({ change: 0 }) });
+  const card = createCard({ callWS: async () => ({}) });
   card._hass.connection = {
     _energy_1: {
       start: new Date("2025-01-01T00:00:00Z"),
@@ -193,7 +193,7 @@ test("reads the house total of the period from the energy collection", () => {
 });
 
 test("prefers the configured home meter over the derived total", () => {
-  const card = createCard({ callWS: async () => ({ change: 0 }) });
+  const card = createCard({ callWS: async () => ({}) });
   card._items = [
     { entity: "sensor.first", consumptionKWh: 1, consumption: 1, displayUnit: "kWh", cost: null },
   ];
@@ -451,19 +451,19 @@ test("renders the optional recorder debug information first", () => {
     html.indexOf('<ha-card class="debug-card">') <
       html.indexOf('<ha-card class="entity-card')
   );
-  assert.match(html, /recorder\/statistic_during_period/);
+  assert.match(html, /recorder\/statistics_during_period/);
   assert.match(html, /Subscription/);
   assert.match(html, /Subscribed/);
   assert.match(html, /id="debug-last-event"/);
   assert.match(html, /Minute/);
 });
 
-test("requests one recorder-calculated total per entity", async () => {
+test("requests the totals of every entity in one message", async () => {
   const calls = [];
   const card = createCard({
     callWS: async (message) => {
       calls.push(message);
-      return { change: 42.5 };
+      return { "sensor.energy": [{ change: 42.5 }] };
     },
   });
   card._collectionStart = new Date("2025-01-01T00:00:00Z");
@@ -474,14 +474,52 @@ test("requests one recorder-calculated total per entity", async () => {
 
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0], {
-    type: "recorder/statistic_during_period",
-    statistic_id: "sensor.energy",
-    fixed_period: {
-      start_time: "2025-01-01T00:00:00.000Z",
-      end_time: "2026-01-01T00:00:00.000Z",
-    },
+    type: "recorder/statistics_during_period",
+    start_time: "2025-01-01T00:00:00.000Z",
+    end_time: "2026-01-01T00:00:00.000Z",
+    statistic_ids: ["sensor.energy"],
+    period: "day",
+    types: ["change"],
   });
   assert.equal(card._items[0].consumptionKWh, 42.5);
+});
+
+test("asks for hourly rows within two days and sums what the recorder reports", async () => {
+  const calls = [];
+  const card = createCard({
+    callWS: async (message) => {
+      calls.push(message);
+      return {
+        "sensor.energy": [{ change: 1.5 }, { change: 2.25 }],
+        "sensor.other": [{ change: 4 }],
+      };
+    },
+  });
+  card._hass.states["sensor.other"] = {
+    entity_id: "sensor.other",
+    state: "4",
+    attributes: {
+      device_class: "energy",
+      state_class: "total_increasing",
+      unit_of_measurement: "kWh",
+    },
+  };
+  card._collectionStart = new Date("2025-01-01T00:00:00Z");
+  card._collectionEnd = new Date("2025-01-02T12:00:00Z");
+  card._lastFetchKey = card._buildFetchKey(["sensor.energy", "sensor.other"]);
+
+  await card._fetchData(["sensor.energy", "sensor.other"], card._lastFetchKey);
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].period, "hour");
+  assert.deepEqual(calls[0].statistic_ids, ["sensor.energy", "sensor.other"]);
+  assert.deepEqual(
+    card._items.map((item) => [item.entity, item.consumptionKWh]),
+    [
+      ["sensor.other", 4],
+      ["sensor.energy", 3.75],
+    ]
+  );
 });
 
 test("does not refetch a historical period when the live state changes", async () => {
@@ -490,7 +528,7 @@ test("does not refetch a historical period when the live state changes", async (
   const card = createCard({
     callWS: async () => {
       callCount += 1;
-      return { change: 42.5 };
+      return { "sensor.energy": [{ change: 42.5 }] };
     },
   });
   card._render = () => {
@@ -515,7 +553,7 @@ test("uses only the recorder total for a period containing now", async () => {
   const card = createCard({
     callWS: async (message) => {
       calls.push(message);
-      return { change: 5 };
+      return { "sensor.energy": [{ change: 5 }] };
     },
   });
   card._hass.states["sensor.energy"].state = "12";
@@ -527,7 +565,7 @@ test("uses only the recorder total for a period containing now", async () => {
 
   assert.equal(card._items[0].consumptionKWh, 5);
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].type, "recorder/statistic_during_period");
+  assert.equal(calls[0].type, "recorder/statistics_during_period");
 });
 
 test("refreshes active periods after Home Assistant generates statistics", async () => {

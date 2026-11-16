@@ -8,6 +8,7 @@ const ENERGY_UNITS = {
 const COLLECTION_RETRY_INTERVAL_MS = 500;
 const MAX_COLLECTION_RETRIES = 20;
 const STATISTICS_GENERATED_EVENT = "recorder_5min_statistics_generated";
+const STATISTICS_HOURLY_PERIOD_MAX_DAYS = 2;
 const STATISTICS_EVENT_REFRESH_DELAY_MS = 10000;
 const DEBUG_RELATIVE_UPDATE_MS = 10000;
 const ZERO_CONSUMPTION_EPSILON_KWH = 0.01;
@@ -78,34 +79,29 @@ function findEnergyDataCollection(hass, collectionKey) {
   return hass?.connection?.[`_${collectionKey}`];
 }
 
-async function fetchStatisticTotal(hass, statisticId, start, end) {
-  return hass.callWS({
-    type: "recorder/statistic_during_period",
-    statistic_id: statisticId,
-    fixed_period: {
-      start_time: start.toISOString(),
-      end_time: end.toISOString(),
-    },
-  });
-}
-
+/**
+ * The consumption of every sensor in one message. The recorder answers with the
+ * rows of the requested period per sensor, so a sensor total is the sum of its
+ * changes, the same reading the Energy dashboard applies to its own sensors.
+ * Hourly rows up to two days and daily rows beyond follows that dashboard as
+ * far as daily rows go and stops there: the answer stays small, and a month is
+ * still read day by day rather than as one month row. Units are deliberately
+ * not asked for: the sensor's own unit is what the card converts, and asking
+ * the recorder to convert as well would convert twice.
+ */
 async function fetchStatisticTotals(hass, statisticIds, start, end) {
-  const entries = await Promise.all(
-    statisticIds.map(async (statisticId) => {
-      const statistic = await fetchStatisticTotal(
-        hass,
-        statisticId,
-        start,
-        end
-      );
-      return [statisticId, statistic || {}];
-    })
-  );
-  return Object.fromEntries(entries);
-}
+  const days = (end.getTime() - start.getTime()) / 86400000;
 
-function getStatisticChange(statistic) {
-  return typeof statistic?.change === "number" ? statistic.change : 0;
+  const stats = await hass.callWS({
+    type: "recorder/statistics_during_period",
+    start_time: start.toISOString(),
+    end_time: end.toISOString(),
+    statistic_ids: statisticIds,
+    period: days > STATISTICS_HOURLY_PERIOD_MAX_DAYS ? "day" : "hour",
+    types: ["change"],
+  });
+
+  return stats || {};
 }
 
 function periodContainsNow(start, end) {
@@ -973,7 +969,7 @@ class HaEnergyTileCard extends HTMLElement {
   _getConsumptionKWh(entityId, stats) {
     const stateObj = this.hass.states?.[entityId];
     const unit = stateObj?.attributes?.unit_of_measurement;
-    const consumption = getStatisticChange(stats[entityId]);
+    const consumption = sumStatisticChanges(stats[entityId]);
     return convertEnergy(consumption, unit, "kWh");
   }
 
@@ -1139,7 +1135,7 @@ class HaEnergyTileCard extends HTMLElement {
       <ha-card class="debug-card">
         <div class="debug-grid">
           <span class="debug-label">Data source</span>
-          <code>recorder/statistic_during_period</code>
+          <code>recorder/statistics_during_period</code>
           <span class="debug-label">From</span>
           <span>${escapeHtml(rangeStart)}</span>
           <span class="debug-label">To</span>
@@ -1680,7 +1676,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c HA_ENERGY-TILE-CARD %c v2.3.0-beta.4 ",
+  "%c HA_ENERGY-TILE-CARD %c v2.3.0-beta.5 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );
