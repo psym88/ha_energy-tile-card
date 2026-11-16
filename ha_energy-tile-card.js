@@ -191,6 +191,24 @@ function getUserLanguage(hass) {
   );
 }
 
+/**
+ * The name of the row that carries what no listed sensor covers. Home Assistant
+ * knows the language the user chose, so that row arrives in that language and
+ * every language without an entry here reads English.
+ */
+const UNTRACKED_NAMES = {
+  de: "Nicht erfasster Verbrauch",
+  en: "Not captured consumption",
+};
+
+function getDefaultUntrackedName(hass) {
+  const language = String(getUserLanguage(hass) || "en")
+    .split("-")[0]
+    .toLowerCase();
+
+  return UNTRACKED_NAMES[language] || UNTRACKED_NAMES.en;
+}
+
 function getNumberLocale(hass) {
   const numberFormat = hass?.locale?.number_format;
   if (numberFormat === "comma_decimal") return "en-US";
@@ -1194,7 +1212,7 @@ class HaEnergyTileCard extends HTMLElement {
   _renderEntityTile(item, index, locale, currency, numberFormatOptions) {
     const entityId = item.entity;
     const name = item.untracked
-      ? this._config.untracked_name || "Not captured consumption"
+      ? this._config.untracked_name || getDefaultUntrackedName(this.hass)
       : buildName(this.hass, entityId, this._config.name);
     const secondary = item.untracked
       ? this._formatShare(item.percentage, locale, numberFormatOptions)
@@ -1662,7 +1680,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c HA_ENERGY-TILE-CARD %c v2.3.0-beta.3 ",
+  "%c HA_ENERGY-TILE-CARD %c v2.3.0-beta.4 ",
   "color: white; background: #03a9f4; font-weight: 600; padding: 2px 6px; border-radius: 3px 0 0 3px;",
   "color: #03a9f4; background: white; font-weight: 600; padding: 2px 6px; border-radius: 0 3px 3px 0; border: 1px solid #03a9f4;"
 );

@@ -247,9 +247,39 @@ test("renders a ring per row instead of the icon and the bar", () => {
   assert.match(html, /<svg class="ring"/);
   assert.match(html, /class="ring-segment ring-current"/);
   assert.match(html, /class="ring-segment ring-untracked"/);
-  assert.match(html, /Not captured consumption/);
+  assert.match(html, /Nicht erfasster Verbrauch/);
   assert.doesNotMatch(html, /ha-icon icon="mdi:flash"/);
   assert.doesNotMatch(html, /bar-track/);
+});
+
+test("names the missing part in the language of the user", () => {
+  const english = createCard({
+    locale: { language: "en" },
+    config: { currency: "USD", language: "en" },
+  });
+  english._config.show_untracked = true;
+  english._houseTotalKWh = 8;
+  english._rows = [];
+  english._items = [
+    { entity: "sensor.energy", consumptionKWh: 6, consumption: 6, displayUnit: "kWh", cost: null },
+  ];
+  english._loading = false;
+  english._render();
+
+  assert.match(english.shadowRoot.innerHTML, /Not captured consumption/);
+
+  const named = createCard();
+  named._config.show_untracked = true;
+  named._config.untracked_name = "Rest";
+  named._houseTotalKWh = 8;
+  named._rows = [];
+  named._items = [
+    { entity: "sensor.energy", consumptionKWh: 6, consumption: 6, displayUnit: "kWh", cost: null },
+  ];
+  named._loading = false;
+  named._render();
+
+  assert.match(named.shadowRoot.innerHTML, />Rest</);
 });
 
 test("provides a visual editor without locale configuration fields", () => {
