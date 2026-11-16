@@ -317,9 +317,35 @@ else
 fi
 rm -f "$release_file"
 
-created=$(curl -fsS -X "$method" "$url" \
-  -H "Authorization: Bearer ${GH_RELEASE_TOKEN}" -H "Accept: application/vnd.github+json" \
-  -H "Content-Type: application/json" -d "$payload")
+# GitHub has answered 500 on this call while everything before it was already in
+# place, which leaves a ref without its release behind. So the answer is read
+# instead of dropped, its body is what a failing run shows, and the call gets
+# three attempts: the same hold a refused push gets, for the one call that puts
+# the release where the ref already is.
+answer=$(mktemp)
+created=""
+attempts=0
+while :; do
+  attempts=$((attempts + 1))
+  status=$(curl -sS -o "$answer" -w '%{http_code}' -X "$method" "$url" \
+    -H "Authorization: Bearer ${GH_RELEASE_TOKEN}" -H "Accept: application/vnd.github+json" \
+    -H "Content-Type: application/json" -d "$payload" || true)
+  case "$status" in
+    200|201)
+      created=$(cat "$answer")
+      break
+      ;;
+  esac
+  if test "$attempts" = 3; then
+    echo "GitHub answered ${status:-no answer} on the release of ${release_tag} ${attempts} times:" >&2
+    cat "$answer" >&2
+    rm -f "$answer"
+    exit 1
+  fi
+  echo "GitHub answered ${status:-no answer} on the release of ${release_tag}, trying again." >&2
+  sleep 5
+done
+rm -f "$answer"
 
 html_url=$(printf '%s' "$created" | json html_url)
 echo "${method} ${url}"
