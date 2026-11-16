@@ -161,6 +161,32 @@ json() {
 
 git fetch --quiet --tags origin
 
+# What GitHub holds becomes a ref this run knows, so that both pushes below can
+# offer it while negotiating and carry nothing but what is new. A ref that
+# arrives with the whole history as a fresh pack is a ref GitHub weighs commit by
+# commit against its own rules, and a rule check that trips over itself answers
+# "fatal error in commit_refs_rules" and leaves the ref where it was. A
+# repository on GitHub that is still empty has nothing to fetch, and that is not
+# an error here.
+github fetch --quiet --no-tags "$github_url" \
+  "+refs/heads/${branch}:refs/remotes/github/${branch}" \
+  "+refs/tags/*:refs/remotes/github/tags/*" || true
+
+# A push GitHub's own rule check tripped over says nothing about what was being
+# pushed, so it is worth another attempt before the run admits it failed.
+push_to_github() {
+  local attempts=0
+  until github push --quiet "$@"; do
+    attempts=$((attempts + 1))
+    if test "$attempts" = 3; then
+      echo "GitHub refused the push ${attempts} times." >&2
+      return 1
+    fi
+    echo "GitHub refused the push, trying again." >&2
+    sleep 5
+  done
+}
+
 echo '::group::Branch'
 if git rev-parse --verify --quiet "refs/heads/${branch}" >/dev/null; then
   source_ref="refs/heads/${branch}"
@@ -172,7 +198,7 @@ test -n "$(git rev-parse --verify --quiet "$source_ref")" || {
   exit 1
 }
 published=$(published_commit "$(git rev-parse "$source_ref")") || exit 1
-github push --quiet --force "$github_url" "${published}:refs/heads/${branch}"
+push_to_github --force "$github_url" "${published}:refs/heads/${branch}" || exit 1
 printf 'Pushed %s to %s' "$source_ref" "$branch"
 if test "$published" = "$(git rev-parse "$source_ref")"; then
   printf '.\n'
@@ -233,7 +259,8 @@ else
   if test "${#refspecs[@]}" = 0; then
     echo "All ${present} tag(s) are already on GitHub."
   else
-    github push --quiet "$github_url" "${refspecs[@]}"
+    # A tag is a new ref, so it is the ref GitHub's own rule check trips over.
+    push_to_github "$github_url" "${refspecs[@]}" || exit 1
     echo "Pushed ${#refspecs[@]} new tag(s), ${present} already there."
   fi
 fi
